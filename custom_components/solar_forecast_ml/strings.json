@@ -1,0 +1,23 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Solar Forecast ML Konfiguration",
+        "description": "Konfiguriere deine Solarprognose-Integration",
+        "data": {
+          "weather_entity": "Wetter-Entity (Empfehlung: DWD Wetter)",
+          "power_entity": "Sensor für täglichen Ertrag in kWh",
+          "plant_kwp": "Größe deiner Solaranlage in kWp (optional)",
+          "update_interval": "Update-Intervall in Sekunden (3600 = 1 Stunde)",
+          "lux_sensor": "Lux-Sensor (optional)",
+          "temp_sensor": "Temperatur-Sensor (optional)",
+          "wind_sensor": "Wind-Sensor (optional)",
+          "uv_sensor": "UV-Sensor (optional)"
+        },
+        "data_description": {
+          "plant_kwp": "Beispiel: 10.5 kWp → Bessere Prognosen in den ersten Tagen"
+        }
+      }
+    }
+  }
+}

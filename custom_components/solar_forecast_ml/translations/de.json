@@ -1,0 +1,33 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Solar Forecast ML",
+        "description": "⚡ Konfiguriere deine intelligente Solarprognose\n\n💡 Tipp: Gib die Größe deiner Anlage an für bessere Startprognosen",
+        "data": {
+          "weather_entity": "🌤️ Wetter-Entity",
+          "power_entity": "☀️ Sensor für täglichen Solar-Ertrag in kWh",
+          "plant_kwp": "🏭 Größe der Solaranlage in kWp (optional)",
+          "update_interval": "⏱️ Update-Intervall in Sekunden",
+          "lux_sensor": "💡 Lux-Sensor (optional)",
+          "temp_sensor": "🌡️ Temperatur-Sensor (optional)",
+          "wind_sensor": "💨 Wind-Sensor (optional)",
+          "uv_sensor": "☀️ UV-Sensor (optional)"
+        },
+        "data_description": {
+          "weather_entity": "Empfehlung: DWD Wetter für präzise Vorhersagen in Deutschland",
+          "power_entity": "Muss täglich auf 0 zurückgesetzt werden (z.B. sensor.solar_daily_yield)",
+          "plant_kwp": "Beispiel: 10.5 kWp. Wird für bessere Startprognosen genutzt, System lernt dann automatisch",
+          "update_interval": "Wie oft Sensordaten gesammelt werden (Prognose nur um 7 Uhr)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung fehlgeschlagen",
+      "unknown": "Unbekannter Fehler"
+    },
+    "abort": {
+      "already_configured": "Integration bereits konfiguriert"
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "Solar Forecast ML",
+  "render_readme": true,
+  "domains": ["sensor"],
+  "iot_class": "Local Polling",
+  "homeassistant": "2024.1.0"
+}
