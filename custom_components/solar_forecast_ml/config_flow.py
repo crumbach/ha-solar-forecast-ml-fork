@@ -14,7 +14,8 @@ from .const import (
     CONF_LUX_SENSOR,
     CONF_TEMP_SENSOR,
     CONF_WIND_SENSOR,
-    CONF_UV_SENSOR
+    CONF_UV_SENSOR,
+    CONF_FORECAST_SOLAR, 
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             # Entferne leere optionale Sensoren
             cleaned_data = {k: v for k, v in user_input.items() if v or k in [CONF_WEATHER_ENTITY, CONF_POWER_ENTITY, CONF_UPDATE_INTERVAL]}
+                
             return self.async_create_entry(
                 title="Solar Forecast ML",
                 data=cleaned_data
@@ -57,6 +59,13 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_UPDATE_INTERVAL, 
                 default=DEFAULT_UPDATE_INTERVAL
             ): vol.All(vol.Coerce(int), vol.Range(min=600, max=86400)),
+            
+            # NEU: Forecast.Solar Sensor für Blending
+            vol.Optional(CONF_FORECAST_SOLAR): selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain="sensor"
+                )
+            ),
             
             # Optionale Sensoren
             vol.Optional(CONF_LUX_SENSOR): selector.EntitySelector(
