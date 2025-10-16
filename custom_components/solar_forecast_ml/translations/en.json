@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Solar Forecast ML",
-        "description": "⚡ Configure your smart solar forecast.\n\n💡 Tip: Specify the size of your plant in kWp to improve the initial forecasts.",
+        "description": "Imagine this: A custom integration that predicts your solar power for today, tomorrow, and the next hour using machine learning – learning from your real data, weather forecasts, and optional sensors. It gets smarter every day, accuracy climbs, and you save nerves (and electricity bills)! No YAML chaos – everything set up via a slick UI Config Flow. Cool because it doesn't just forecast; it *understands* your setup and brings automations like \"EV charge on peak sun\" to life. Plug it in, and let the sun work for you!",
         "data": {
           "weather_entity": "🌤️ Weather Entity",
           "power_entity": "☀️ Sensor for daily solar yield (kWh)",
@@ -13,18 +13,31 @@
           "lux_sensor": "💡 Lux sensor (optional)",
           "temp_sensor": "🌡️ Temperature sensor (optional)",
           "wind_sensor": "💨 Wind sensor (optional)",
-          "uv_sensor": "☀️ UV sensor (optional)"
+          "uv_sensor": "☀️ UV sensor (optional)",
+          "inverter_power_sensor": "🔌 Inverter Power Sensor (current yield in W, optional)",
+          "inverter_daily_yield": "📊 Inverter Daily Yield (kWh, optional)",
+          "enable_diagnostic": "📋 Enable Diagnostic Status? (optional)",
+          "enable_hourly": "⏰ Enable Next-Hour Forecast? (optional)"
         },
         "data_description": {
-          "weather_entity": "Recommendation: A weather service with precise local forecasts.",
+          "weather_entity": "Recommendation: DWD Weather for precise forecasts in Germany.",
           "power_entity": "This sensor must reset to 0 daily (e.g., sensor.solar_daily_yield).",
           "plant_kwp": "Example: 10.5. Used for better initial forecasts; the system will learn automatically afterward.",
-          "update_interval": "How often sensor data should be collected. The actual forecast is only created once a day in the morning."
+          "update_interval": "How often sensor data should be collected. The actual forecast is only created once a day in the morning.",
+          "forecast_solar_sensor": "A sensor like 'sensor.forecast_solar_today' for blending with our ML model (optional).",
+          "lux_sensor": "Illuminance sensor (e.g., from weather station) for light intensity influence (optional).",
+          "temp_sensor": "Temperature sensor for heat influence on yield (optional).",
+          "wind_sensor": "Wind speed sensor (negative influence in strong wind, optional).",
+          "uv_sensor": "UV index sensor for radiation influence (optional).",
+          "inverter_power_sensor": "Your sensor for current solar yield (e.g., 'sensor.solar_current_power' in W). Checks if >10W (Inverter on) – helps set forecasts to 0 on failures. Leave empty if not needed.",
+          "inverter_daily_yield": "Your sensor for cumulative daily yield (e.g., 'sensor.solar_daily_production' from Fronius/SMA/Anker, in kWh). Optional, for robust checks at night/battery switches (>0.1 kWh = day active). Leave empty if using only the Power sensor.",
+          "enable_diagnostic": "Enables 'Solar Forecast ML Status' sensor in dashboard – shows 'Running normal' with details (e.g., Inverter status). Great for more transparency.",
+          "enable_hourly": "Enables 'Solar Forecast ML Next Hour Forecast' sensor (kWh). Based on hourly weather forecast – ideal for automations like EV charging in peak time."
         }
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect",
+      "cannot_connect": "Connection failed",
       "unknown": "Unknown error"
     },
     "abort": {
