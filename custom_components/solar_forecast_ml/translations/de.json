@@ -3,22 +3,36 @@
     "step": {
       "user": {
         "title": "Solar Forecast ML",
-        "description": "⚡ Konfiguriere deine intelligente Solarprognose\n\n💡 Tipp: Gib die Größe deiner Anlage an für bessere Startprognosen",
+        "description": "⚡ Konfiguriere deine intelligente Solarprognose.\n\n💡 Tipp: Gib die Größe deiner Anlage in kWp an, um die initialen Prognosen zu verbessern.",
         "data": {
-          "weather_entity": "🌤️ Wetter-Entity",
-          "power_entity": "☀️ Sensor für täglichen Solar-Ertrag in kWh",
+          "weather_entity": "🌤️ Wetter-Entität",
+          "power_entity": "☀️ Sensor für täglichen Solar-Ertrag (kWh)",
           "plant_kwp": "🏭 Größe der Solaranlage in kWp (optional)",
           "update_interval": "⏱️ Update-Intervall in Sekunden",
+          "forecast_solar_sensor": "📈 Weiterer Prognose Sensor (optional)",
           "lux_sensor": "💡 Lux-Sensor (optional)",
           "temp_sensor": "🌡️ Temperatur-Sensor (optional)",
           "wind_sensor": "💨 Wind-Sensor (optional)",
-          "uv_sensor": "☀️ UV-Sensor (optional)"
+          "uv_sensor": "☀️ UV-Sensor (optional)",
+          "inverter_power_sensor": "🔌 Inverter-Power-Sensor (aktueller Ertrag in W, optional)",
+          "inverter_daily_yield": "📊 Inverter-Tagesertrag (kWh, optional)",
+          "enable_diagnostic": "📋 Diagnostic-Status aktivieren? (optional)",
+          "enable_hourly": "⏰ Nächste-Stunde-Prognose aktivieren? (optional)"
         },
         "data_description": {
-          "weather_entity": "Empfehlung: DWD Wetter für präzise Vorhersagen in Deutschland",
-          "power_entity": "Muss täglich auf 0 zurückgesetzt werden (z.B. sensor.solar_daily_yield)",
-          "plant_kwp": "Beispiel: 10.5 kWp. Wird für bessere Startprognosen genutzt, System lernt dann automatisch",
-          "update_interval": "Wie oft Sensordaten gesammelt werden (Prognose nur um 7 Uhr)"
+          "weather_entity": "Empfehlung: DWD Wetter für präzise Vorhersagen in Deutschland.",
+          "power_entity": "Dieser Sensor muss sich täglich auf 0 zurücksetzen (z.B. sensor.solar_daily_yield).",
+          "plant_kwp": "Beispiel: 10.5. Wird für bessere Startprognosen genutzt; das System lernt danach automatisch.",
+          "update_interval": "Wie oft Sensordaten gesammelt werden sollen. Die eigentliche Prognose wird nur einmal täglich morgens erstellt.",
+          "forecast_solar_sensor": "Ein Sensor wie 'sensor.forecast_solar_today' zum Blenden mit unserem ML-Modell (optional).",
+          "lux_sensor": "Illuminanz-Sensor (z.B. aus Wetterstation) für Lichtstärke-Einfluss (optional).",
+          "temp_sensor": "Temperatur-Sensor für Wärmeeinfluss auf Ertrag (optional).",
+          "wind_sensor": "Windgeschwindigkeit-Sensor (negativer Einfluss bei Starkwind, optional).",
+          "uv_sensor": "UV-Index-Sensor für Strahlungseinfluss (optional).",
+          "inverter_power_sensor": "Dein Sensor für aktuellen Solar-Ertrag (z.B. 'sensor.solar_current_power' in W). Checkt, ob >10W (Inverter on) – hilft, Prognosen bei Ausfällen auf 0 zu setzen. Lass leer, wenn nicht nötig.",
+          "inverter_daily_yield": "Dein Sensor für kumulativen Tagesertrag (z.B. 'sensor.solar_daily_production' aus Fronius/SMA/Anker, in kWh). Optional, für robuste Checks bei Nacht/Akku-Umschaltungen (>0.1 kWh = Tag aktiv). Lass leer, wenn du nur den Power-Sensor nutzt.",
+          "enable_diagnostic": "Aktiviert 'Solar Forecast ML Status'-Sensor im Dashboard – zeigt 'Läuft normal' mit Details (z.B. Inverter-Status). Super für mehr Transparenz.",
+          "enable_hourly": "Aktiviert 'Solar Forecast ML Prognose Nächste Stunde'-Sensor (kWh). Basierend auf stündlicher Wettervorhersage – ideal für Automatisierungen wie EV-Laden in Peak-Zeit."
         }
       }
     },
@@ -27,7 +41,7 @@
       "unknown": "Unbekannter Fehler"
     },
     "abort": {
-      "already_configured": "Integration bereits konfiguriert"
+      "already_configured": "Die Integration ist bereits konfiguriert."
     }
   }
 }

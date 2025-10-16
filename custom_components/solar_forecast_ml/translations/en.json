@@ -1,0 +1,34 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Solar Forecast ML",
+        "description": "⚡ Configure your smart solar forecast.\n\n💡 Tip: Specify the size of your plant in kWp to improve the initial forecasts.",
+        "data": {
+          "weather_entity": "🌤️ Weather Entity",
+          "power_entity": "☀️ Sensor for daily solar yield (kWh)",
+          "plant_kwp": "🏭 Size of the solar plant in kWp (optional)",
+          "update_interval": "⏱️ Update interval in seconds",
+          "forecast_solar_sensor": "📈 Additional forecast sensor (optional)",
+          "lux_sensor": "💡 Lux sensor (optional)",
+          "temp_sensor": "🌡️ Temperature sensor (optional)",
+          "wind_sensor": "💨 Wind sensor (optional)",
+          "uv_sensor": "☀️ UV sensor (optional)"
+        },
+        "data_description": {
+          "weather_entity": "Recommendation: A weather service with precise local forecasts.",
+          "power_entity": "This sensor must reset to 0 daily (e.g., sensor.solar_daily_yield).",
+          "plant_kwp": "Example: 10.5. Used for better initial forecasts; the system will learn automatically afterward.",
+          "update_interval": "How often sensor data should be collected. The actual forecast is only created once a day in the morning."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect",
+      "unknown": "Unknown error"
+    },
+    "abort": {
+      "already_configured": "The integration is already configured."
+    }
+  }
+}

@@ -16,6 +16,10 @@ from .const import (
     CONF_WIND_SENSOR,
     CONF_UV_SENSOR,
     CONF_FORECAST_SOLAR, 
+    CONF_INVERTER_POWER,  # Neu: Current Power
+    CONF_INVERTER_DAILY,  # Neu: Daily Yield
+    CONF_DIAGNOSTIC,  # Neu: Diagnostic Toggle
+    CONF_HOURLY,  # Neu: Hourly Toggle
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -89,6 +93,46 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_UV_SENSOR): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="sensor")
             ),
+            # Neu: Inverter Power-Sensor (einfacher Check: >0 = on)
+            vol.Optional(
+                CONF_INVERTER_POWER,
+                description={
+                    "suggested_value": None,
+                    "description": "Aktueller Solar-Power-Sensor (z.B. in W) – ich checke, ob >10W für 'Inverter on'. Hilft bei Ausfällen, ohne extra Binary-Sensor."
+                }
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain="sensor",
+                    device_class="power"  # Filtert auf Power-Sensoren
+                )
+            ),
+            # Neu: Optional Daily Yield für robustere Checks (erweitert mit Erklärung & Beispiel)
+            vol.Optional(
+                CONF_INVERTER_DAILY,
+                description={
+                    "suggested_value": None,
+                    "description": "Täglicher Ertrag deines Inverters (z.B. 'sensor.solar_daily_production' aus deiner Fronius/SMA/Anker-Integration, in kWh) – optional. Hilft, bei Nacht oder Akku-Umschaltungen zu prüfen, ob der Tag aktiv war (>0.1 kWh = 'Inverter on'). Lass leer, wenn du nur den Current-Power nutzt."
+                }
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain="sensor",
+                    device_class="energy"  # Filtert auf Energy-Sensoren
+                )
+            ),
+            # Neu: Diagnostic-Status Toggle
+            vol.Optional(
+                CONF_DIAGNOSTIC,
+                default=True,
+                description={"description": "Diagnostic-Status-Sensor aktivieren? – Zeigt laufenden Status (z.B. 'Läuft normal') für mehr Feedback im Dashboard."
+                }
+            ): bool,
+            # Neu: Hourly-Prognose Toggle
+            vol.Optional(
+                CONF_HOURLY,
+                default=False,
+                description={"description": "Prognose für nächste Stunde aktivieren? – Neuen Sensor für 'Nächste Stunde' (kWh), basierend auf stündlicher Wettervorhersage. Gut für Automatisierungen wie EV-Laden."
+                }
+            ): bool,
         })
 
         return self.async_show_form(

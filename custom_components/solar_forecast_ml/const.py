@@ -10,6 +10,10 @@ CONF_UPDATE_INTERVAL = "update_interval"
 # Optionale Funktionen
 CONF_PLANT_KWP = "plant_kwp"
 CONF_FORECAST_SOLAR = "forecast_solar_sensor"
+CONF_INVERTER_POWER = "inverter_power_sensor"  # Neu: Current Power für einfachen On/Off-Check
+CONF_INVERTER_DAILY = "inverter_daily_yield"   # Neu: Optional Daily für robustere Checks
+CONF_DIAGNOSTIC = "enable_diagnostic"  # Neu: Toggle für Status-Sensor
+CONF_HOURLY = "enable_hourly"  # Neu: Toggle für nächste Stunde Prognose
 
 # Optionale Sensoren
 CONF_LUX_SENSOR = "lux_sensor"
@@ -21,6 +25,7 @@ CONF_UV_SENSOR = "uv_sensor"
 DEFAULT_UPDATE_INTERVAL = 3600  # 1 Stunde
 DEFAULT_BASE_CAPACITY = 10.0    
 DEFAULT_KWP_TO_KWH_FACTOR = 1.0 # KORREKTUR: Faktor 1.0 für stündliche kW-Basis (war 4.5)
+DEFAULT_INVERTER_THRESHOLD = 10.0  # Neu: Min-Watt für "on"
 
 # Datei für gelernte Gewichte
 WEIGHTS_FILE = "/config/custom_components/solar_forecast_ml/learned_weights.json"
