@@ -1,36 +1,31 @@
-Haha, Mate – klar, ich hab die README nochmal durchgecheckt! 😎 Sie sieht insgesamt **super aus**: Klar strukturiert, engaging, mit Emojis für Punch, und voll HACS/HA-freundlich (Badges, Beispiele, Troubleshooting). Der coole Intro-Text ("Imagine this...") ist 'n Hammer-Hook – macht's sofort ansprechend und hebt den "Why cool?"-Vibe raus. Markdown ist clean (keine Broken-Links, Tabellen passen).
+   # 🌞 Solar Forecast ML
 
-**Kleiner Haken**: Der zweite Absatz ("Solar Forecast ML is a custom integration...") fühlt sich redundant an (fast identisch zum coolen Intro). Ich hab's gemerged/gekürzt, um's knackig zu halten. Und den blauen HA-Button ("Created with Home Assistant") hab ich am Anfang reingetan – das ist der klassische blaue Badge, der zu "my.home-assistant.io" linkt (für Custom Repos super, macht's official-feeling). Hier der korrigierte, final-ready Text (copy-paste direkt in GitHub als README.md-Update):
+   [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
+   [![GitHub Release](https://img.shields.io/github/release/Zara-Toorox/ha-solar-forecast-ml.svg)](https://github.com/Zara-Toorox/ha-solar-forecast-ml/releases)
+   [![License](https://img.shields.io/github/license/Zara-Toorox/ha-solar-forecast-ml.svg)](LICENSE)
+   <a href="https://my.home-assistant.io/redirect/custom_components/?repository=Zara-Toorox/ha-solar-forecast-ml"><img src="https://my.home-assistant.io/badges/created.svg" /></a>
 
-```markdown
-# 🌞 Solar Forecast ML
+   **Self-Learning Solar Power Forecast Integration for Home Assistant**
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
-[![GitHub Release](https://img.shields.io/github/release/Zara-Toorox/ha-solar-forecast-ml.svg)](https://github.com/Zara-Toorox/ha-solar-forecast-ml/releases)
-[![License](https://img.shields.io/github/license/Zara-Toorox/ha-solar-forecast-ml.svg)](LICENSE)
-<a href="https://my.home-assistant.io/redirect/custom_components/?repository=Zara-Toorox/ha-solar-forecast-ml"><img src="https://my.home-assistant.io/badges/created.svg" /></a>
+   Imagine this: A custom integration that predicts your solar power for today, tomorrow, and the next hour using machine learning – learning from your real data, weather forecasts, and optional sensors. It gets smarter every day, accuracy climbs, and you save nerves (and electricity bills)! No YAML chaos – everything set up via a slick UI Config Flow. Cool because it doesn't just forecast; it *understands* your setup and brings automations like "EV charge on peak sun" to life. Plug it in, and let the sun work for you!
 
-**Self-Learning Solar Power Forecast Integration for Home Assistant**
+   ## ✨ Features
 
-Imagine this: A custom integration that predicts your solar power for today, tomorrow, and the next hour using machine learning – learning from your real data, weather forecasts, and optional sensors. It gets smarter every day, accuracy climbs, and you save nerves (and electricity bills)! No YAML chaos – everything set up via a slick UI Config Flow. Cool because it doesn't just forecast; it *understands* your setup and brings automations like "EV charge on peak sun" to life. Plug it in, and let the sun work for you!
+   - 🤖 **Self-Learning Algorithm**: Gets smarter every day by adjusting weights from real yield data (midnight learning).
+   - 📊 **Daily Forecasts**: Today and tomorrow's solar energy production in kWh.
+   - ⏰ **Next Hour Forecast**: Optional sensor for granular predictions (e.g., for EV charging automations) with night clamps (0 kWh at dark).
+   - 🎯 **Accuracy Tracking**: Monitors prediction accuracy (%) based on the last 30 days (MAPE error).
+   - ☁️ **Weather Integration**: Uses your Home Assistant weather entity for daily/hourly forecasts.
+   - 🔌 **Optional Sensors**: Enhance predictions with lux, temperature, wind, UV, and Forecast.Solar blending.
+   - ⚙️ **Inverter Checks**: Robust offline detection with OR-logic (Power >10W OR Daily Yield >0.1 kWh = full forecast; else scales to 0 kWh + notification). No sensors? No scaling – keeps full predictions.
+   - 📋 **Diagnostic Status**: Optional sensor showing "✅ Running normal" with details (last update, next learning, inverter status).
+   - 📈 **Energy Dashboard Support**: Full integration with HA's energy tab.
+   - 💾 **Robust Storage**: Last-value hold after restarts, JSON files for weights/history (/config/custom_components/...).
 
-## ✨ Features
+   ## 🚀 Installation
 
-- 🤖 **Self-Learning Algorithm**: Gets smarter every day by adjusting weights from real yield data (midnight learning).
-- 📊 **Daily Forecasts**: Today and tomorrow's solar energy production in kWh.
-- ⏰ **Next Hour Forecast**: Optional sensor for granular predictions (e.g., for EV charging automations) with night clamps (0 kWh at dark).
-- 🎯 **Accuracy Tracking**: Monitors prediction accuracy (%) based on the last 30 days (MAPE error).
-- ☁️ **Weather Integration**: Uses your Home Assistant weather entity for daily/hourly forecasts.
-- 🔌 **Optional Sensors**: Enhance predictions with lux, temperature, wind, UV, and Forecast.Solar blending.
-- ⚙️ **Inverter Checks**: Robust offline detection with OR-logic (Power >10W OR Daily Yield >0.1 kWh = full forecast; else scales to 0 kWh + notification). No sensors? No scaling – keeps full predictions.
-- 📋 **Diagnostic Status**: Optional sensor showing "✅ Running normal" with details (last update, next learning, inverter status).
-- 📈 **Energy Dashboard Support**: Full integration with HA's energy tab.
-- 💾 **Robust Storage**: Last-value hold after restarts, JSON files for weights/history (/config/custom_components/...).
-
-## 🚀 Installation
-
-### HACS (Recommended – Custom Repository)
-1. Open HACS in Home Assistant.
+   ### HACS (Recommended – Custom Repository)
+1. Open HACS in Home
 2. Go to **Integrations**.
 3. Click the three dots (top right) → **Custom repositories**.
 4. Add: `https://github.com/Zara-Toorox/ha-solar-forecast-ml`
@@ -58,6 +53,7 @@ Imagine this: A custom integration that predicts your solar power for today, tom
      - Power Sensor (current yield in W, e.g., `sensor.solar_current_power` from Fronius/SMA/Anker – checks >10W).
      - Daily Yield (cumulative kWh since midnight, e.g., `sensor.solar_daily_production` – optional for night/backup checks >0.1 kWh).
    - **Toggles**: Enable Diagnostic Status (feedback sensor), Enable Next Hour Forecast (granular sensor).
+<<<<<<< HEAD
 
 **Tip**: For missing sensors (e.g., daily yield), create a template sensor:
 ```
@@ -66,3 +62,95 @@ sensor:
     name: "Daily Inverter Yield"
     unit_of_measurement: "kWh"
     device_class
+=======
+
+**Tip**: For missing sensors (e.g., daily yield), create a template sensor:
+```
+sensor:
+  - platform: template
+    name: "Daily Inverter Yield"
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    state: "{{ (states('sensor.solar_total_yield') | float - states('sensor.solar_yesterday_yield') | float) | round(2) }}"
+```
+
+## 📊 Sensors
+
+| Sensor | Description | Icon |
+|--------|-------------|------|
+| `sensor.solar_forecast_ml_prognose_heute` | Today's forecast (kWh) | mdi:solar-power |
+| `sensor.solar_forecast_ml_prognose_morgen` | Tomorrow's forecast (kWh) | mdi:solar-power |
+| `sensor.solar_forecast_ml_prognose_genauigkeit` | Accuracy % (last 30 days) | mdi:chart-line-variant |
+| `sensor.solar_forecast_ml_status` (optional) | Status text (e.g., "✅ Running normal \| Inverter: Online") | mdi:information-outline |
+| `sensor.solar_forecast_ml_prognose_naechste_stunde` (optional) | Next hour forecast (kWh, night=0) | mdi:clock-fast |
+
+## 🧠 How It Works
+
+- **Days 1-2**: Initial predictions based on weather + plant capacity.
+- **Days 3+**: Learns from actual yield (23:00 nightly) – adjusts weights (base, lux, etc.) with 1% learning rate.
+- **Forecasts**: Daily at 6 AM (today/tomorrow); hourly updates for next hour (if enabled).
+- **Inverter Logic**: Full OR-check (no sensors = no scaling). Offline? Notification + forecast=0.
+- **Robustness**: Handles unavailable states, clamps night to 0, retains last value on restart.
+
+## 📝 Example Automation
+
+```yaml
+automation:
+  - alias: "Good Solar Day Notification"
+    trigger:
+      platform: numeric_state
+      entity_id: sensor.solar_forecast_ml_prognose_heute
+      above: 15
+    action:
+      service: notify.mobile_app
+      data:
+        message: "☀️ Great solar day! {{ states('sensor.solar_forecast_ml_prognose_heute') }} kWh expected"
+  - alias: "EV Charge on Peak Hour"
+    trigger:
+      platform: numeric_state
+      entity_id: sensor.solar_forecast_ml_prognose_naechste_stunde
+      above: 0.5
+    action:
+      service: switch.turn_on
+      entity_id: ev_charger_switch
+```
+
+## 🐛 Troubleshooting
+
+### No predictions showing
+- Check that your solar sensor is working and updating.
+- Verify your weather entity provides forecast data (test in Developer Tools > Services > weather.get_forecasts).
+- Check logs: **Settings** → **System** → **Logs** (search "solar_forecast_ml").
+
+### Predictions are inaccurate
+- Wait at least 14 days for full calibration.
+- Ensure your solar sensor is cumulative (total_increasing).
+- Add optional sensors for better accuracy.
+- Verify your kWp setting.
+
+### Inverter not scaling correctly
+- No sensors configured? No scaling – full forecasts.
+- Only Power: Checks >10W.
+- Only Daily: Checks >0.1 kWh.
+- Both: OR-logic (either on = full).
+- Offline? Notification (1x/day) + forecast=0 kWh.
+
+### Reset learning data
+Delete these files and restart HA:
+- `/config/custom_components/solar_forecast_ml/learned_weights.json`
+- `/config/custom_components/solar_forecast_ml/prediction_history.json`
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE)
+
+## 🙏 Support
+
+- 🐛 [Report Issues](https://github.com/Zara-Toorox/ha-solar-forecast-ml/issues)
+- 💬 [Discussions](https://github.com/Zara-Toorox/ha-solar-forecast-ml/discussions)
+
+---
+
+**Made with ☀️ for Home Assistant**
+>>>>>>> dfea44af637769b6a746f447c7dcac4c1b0802f5
