@@ -132,8 +132,17 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         
         if user_input is not None:
+            # Bereinige leere Strings zu None für optionale Felder
+            cleaned_input = {}
+            for key, value in user_input.items():
+                if value == "" or value is None:
+                    # Optionale Sensoren nicht in cleaned_input aufnehmen wenn leer
+                    if key not in [CONF_WEATHER_ENTITY, CONF_POWER_ENTITY, CONF_UPDATE_INTERVAL, CONF_PLANT_KWP]:
+                        continue
+                cleaned_input[key] = value
+            
             # Merge mit bestehenden Notification-Einstellungen
-            new_data = {**config_entry.data, **user_input}
+            new_data = {**config_entry.data, **cleaned_input}
             
             self.hass.config_entries.async_update_entry(
                 config_entry,
@@ -147,8 +156,8 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         current = config_entry.data
         
-        # Schema mit aktuellen Werten
-        reconfigure_schema = vol.Schema({
+        # Schema mit aktuellen Werten - None wird zu "" für EntitySelector
+        schema_dict = {
             vol.Required(
                 CONF_WEATHER_ENTITY,
                 default=current.get(CONF_WEATHER_ENTITY, "weather.home")
@@ -162,59 +171,51 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 selector.EntitySelectorConfig(domain="sensor")
             ),
             vol.Optional(
-                CONF_PLANT_KWP,
-                default=current.get(CONF_PLANT_KWP)
-            ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=1000)),
-            vol.Optional(
                 CONF_UPDATE_INTERVAL,
                 default=current.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
             ): vol.All(vol.Coerce(int), vol.Range(min=600, max=86400)),
-            
-            vol.Optional(
-                CONF_FORECAST_SOLAR,
-                default=current.get(CONF_FORECAST_SOLAR)
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")
-            ),
-            
-            vol.Optional(
-                CONF_LUX_SENSOR,
-                default=current.get(CONF_LUX_SENSOR)
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor", device_class="illuminance")
-            ),
-            vol.Optional(
-                CONF_TEMP_SENSOR,
-                default=current.get(CONF_TEMP_SENSOR)
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor", device_class="temperature")
-            ),
-            vol.Optional(
-                CONF_WIND_SENSOR,
-                default=current.get(CONF_WIND_SENSOR)
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor", device_class="wind_speed")
-            ),
-            vol.Optional(
-                CONF_UV_SENSOR,
-                default=current.get(CONF_UV_SENSOR)
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")
-            ),
-            
-            vol.Optional(
-                CONF_INVERTER_POWER,
-                default=current.get(CONF_INVERTER_POWER)
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor", device_class="power")
-            ),
-            vol.Optional(
-                CONF_INVERTER_DAILY,
-                default=current.get(CONF_INVERTER_DAILY)
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor", device_class="energy")
-            ),
-        })
+        }
+        
+        # Plant kWp nur hinzufügen wenn gesetzt oder leer lassen
+        if current.get(CONF_PLANT_KWP):
+            schema_dict[vol.Optional(CONF_PLANT_KWP, default=current.get(CONF_PLANT_KWP))] = vol.All(
+                vol.Coerce(float), vol.Range(min=0.5, max=1000)
+            )
+        else:
+            schema_dict[vol.Optional(CONF_PLANT_KWP)] = vol.All(
+                vol.Coerce(float), vol.Range(min=0.5, max=1000)
+            )
+        
+        reconfigure_schema = vol.Schema(schema_dict)
+        
+        # Optionale Entity-Felder nur hinzufügen wenn sie bereits gesetzt sind
+        optional_entities = {
+            CONF_FORECAST_SOLAR: ("sensor", None),
+            CONF_LUX_SENSOR: ("sensor", "illuminance"),
+            CONF_TEMP_SENSOR: ("sensor", "temperature"),
+            CONF_WIND_SENSOR: ("sensor", "wind_speed"),
+            CONF_UV_SENSOR: ("sensor", None),
+            CONF_INVERTER_POWER: ("sensor", "power"),
+            CONF_INVERTER_DAILY: ("sensor", "energy"),
+        }
+        
+        schema_dict = reconfigure_schema.schema
+        for key, (domain, device_class) in optional_entities.items():
+            current_value = current.get(key)
+            if current_value:
+                # Nur hinzufügen wenn bereits gesetzt
+                config = selector.EntitySelectorConfig(domain=domain)
+                if device_class:
+                    config = selector.EntitySelectorConfig(domain=domain, device_class=device_class)
+                schema_dict[vol.Optional(key, default=current_value)] = selector.EntitySelector(config)
+            else:
+                # Leeres Feld für neue Sensoren
+                config = selector.EntitySelectorConfig(domain=domain)
+                if device_class:
+                    config = selector.EntitySelectorConfig(domain=domain, device_class=device_class)
+                schema_dict[vol.Optional(key)] = selector.EntitySelector(config)
+        
+        reconfigure_schema = vol.Schema(schema_dict)
 
         return self.async_show_form(
             step_id="reconfigure",
