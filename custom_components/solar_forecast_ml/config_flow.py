@@ -4,6 +4,8 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers import selector
+from homeassistant.helpers import config_validation as cv
+
 from .const import (
     DOMAIN, 
     CONF_WEATHER_ENTITY, 
@@ -16,13 +18,22 @@ from .const import (
     CONF_WIND_SENSOR,
     CONF_UV_SENSOR,
     CONF_FORECAST_SOLAR, 
-    CONF_INVERTER_POWER,  # Neu: Current Power
-    CONF_INVERTER_DAILY,  # Neu: Daily Yield
-    CONF_DIAGNOSTIC,  # Neu: Diagnostic Toggle
-    CONF_HOURLY,  # Neu: Hourly Toggle
+    CONF_INVERTER_POWER,
+    CONF_INVERTER_DAILY,
+    CONF_DIAGNOSTIC,
+    CONF_HOURLY,
+    CONF_NOTIFY_FORECAST,
+    CONF_NOTIFY_LEARNING,
+    CONF_NOTIFY_INVERTER,
+    CONF_NOTIFY_STARTUP,
+    DEFAULT_NOTIFY_FORECAST,
+    DEFAULT_NOTIFY_LEARNING,
+    DEFAULT_NOTIFY_INVERTER,
+    DEFAULT_NOTIFY_STARTUP,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
 
 class SolarForecastMLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Solar Forecast ML."""
@@ -34,12 +45,17 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
 
         if user_input is not None:
-            # Entferne leere optionale Sensoren
-            cleaned_data = {k: v for k, v in user_input.items() if v or k in [CONF_WEATHER_ENTITY, CONF_POWER_ENTITY, CONF_UPDATE_INTERVAL]}
-                
+            # Setze Notification Defaults, falls nicht gesetzt
+            user_input.setdefault(CONF_NOTIFY_FORECAST, DEFAULT_NOTIFY_FORECAST)
+            user_input.setdefault(CONF_NOTIFY_LEARNING, DEFAULT_NOTIFY_LEARNING)
+            user_input.setdefault(CONF_NOTIFY_INVERTER, DEFAULT_NOTIFY_INVERTER)
+            user_input.setdefault(CONF_NOTIFY_STARTUP, DEFAULT_NOTIFY_STARTUP)
+            user_input.setdefault(CONF_DIAGNOSTIC, True)
+            user_input.setdefault(CONF_HOURLY, False)
+            
             return self.async_create_entry(
                 title="Solar Forecast ML",
-                data=cleaned_data
+                data=user_input
             )
 
         data_schema = vol.Schema({
@@ -55,88 +71,235 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="sensor")
             ),
-            vol.Optional(
-                CONF_PLANT_KWP,
-                description={"suggested_value": None}
-            ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=1000)),
+            vol.Optional(CONF_PLANT_KWP): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=1000)),
             vol.Optional(
                 CONF_UPDATE_INTERVAL, 
                 default=DEFAULT_UPDATE_INTERVAL
             ): vol.All(vol.Coerce(int), vol.Range(min=600, max=86400)),
             
-            # NEU: Forecast.Solar Sensor für Blending
+            # Forecast.Solar Sensor
             vol.Optional(CONF_FORECAST_SOLAR): selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain="sensor"
-                )
+                selector.EntitySelectorConfig(domain="sensor")
             ),
             
             # Optionale Sensoren
             vol.Optional(CONF_LUX_SENSOR): selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain="sensor",
-                    device_class="illuminance"
-                )
+                selector.EntitySelectorConfig(domain="sensor", device_class="illuminance")
             ),
             vol.Optional(CONF_TEMP_SENSOR): selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain="sensor",
-                    device_class="temperature"
-                )
+                selector.EntitySelectorConfig(domain="sensor", device_class="temperature")
             ),
             vol.Optional(CONF_WIND_SENSOR): selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain="sensor",
-                    device_class="wind_speed"
-                )
+                selector.EntitySelectorConfig(domain="sensor", device_class="wind_speed")
             ),
             vol.Optional(CONF_UV_SENSOR): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="sensor")
             ),
-            # Neu: Inverter Power-Sensor (einfacher Check: >0 = on)
-            vol.Optional(
-                CONF_INVERTER_POWER,
-                description={
-                    "suggested_value": None,
-                    "description": "Aktueller Solar-Power-Sensor (z.B. in W) – ich checke, ob >10W für 'Inverter on'. Hilft bei Ausfällen, ohne extra Binary-Sensor."
-                }
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain="sensor",
-                    device_class="power"  # Filtert auf Power-Sensoren
-                )
+            
+            # Inverter Sensoren
+            vol.Optional(CONF_INVERTER_POWER): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor", device_class="power")
             ),
-            # Neu: Optional Daily Yield für robustere Checks (erweitert mit Erklärung & Beispiel)
-            vol.Optional(
-                CONF_INVERTER_DAILY,
-                description={
-                    "suggested_value": None,
-                    "description": "Täglicher Ertrag deines Inverters (z.B. 'sensor.solar_daily_production' aus deiner Fronius/SMA/Anker-Integration, in kWh) – optional. Hilft, bei Nacht oder Akku-Umschaltungen zu prüfen, ob der Tag aktiv war (>0.1 kWh = 'Inverter on'). Lass leer, wenn du nur den Current-Power nutzt."
-                }
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain="sensor",
-                    device_class="energy"  # Filtert auf Energy-Sensoren
-                )
+            vol.Optional(CONF_INVERTER_DAILY): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor", device_class="energy")
             ),
-            # Neu: Diagnostic-Status Toggle
-            vol.Optional(
-                CONF_DIAGNOSTIC,
-                default=True,
-                description={"description": "Diagnostic-Status-Sensor aktivieren? – Zeigt laufenden Status (z.B. 'Läuft normal') für mehr Feedback im Dashboard."
-                }
-            ): bool,
-            # Neu: Hourly-Prognose Toggle
-            vol.Optional(
-                CONF_HOURLY,
-                default=False,
-                description={"description": "Prognose für nächste Stunde aktivieren? – Neuen Sensor für 'Nächste Stunde' (kWh), basierend auf stündlicher Wettervorhersage. Gut für Automatisierungen wie EV-Laden."
-                }
-            ): bool,
+            
+            # Feature Toggles
+            vol.Optional(CONF_DIAGNOSTIC, default=True): cv.boolean,
+            vol.Optional(CONF_HOURLY, default=False): cv.boolean,
+            
+            # ✅ NEU: Notification Toggles
+            vol.Optional(CONF_NOTIFY_FORECAST, default=DEFAULT_NOTIFY_FORECAST): cv.boolean,
+            vol.Optional(CONF_NOTIFY_LEARNING, default=DEFAULT_NOTIFY_LEARNING): cv.boolean,
+            vol.Optional(CONF_NOTIFY_INVERTER, default=DEFAULT_NOTIFY_INVERTER): cv.boolean,
+            vol.Optional(CONF_NOTIFY_STARTUP, default=DEFAULT_NOTIFY_STARTUP): cv.boolean,
         })
 
         return self.async_show_form(
             step_id="user",
             data_schema=data_schema,
-            errors=errors
+            errors=errors,
+            description_placeholders={
+                "info": "Konfiguriere deine Solar Forecast ML Integration. Alle Einstellungen können später geändert werden."
+            }
+        )
+
+    # ✅ NEU: Reconfigure Flow - Für Änderung der Sensoren
+    async def async_step_reconfigure(self, user_input=None):
+        """Handle reconfiguration of the integration."""
+        config_entry = self.hass.config_entries.async_get_entry(
+            self.context["entry_id"]
+        )
+        
+        if user_input is not None:
+            # Merge mit bestehenden Notification-Einstellungen
+            new_data = {**config_entry.data, **user_input}
+            
+            self.hass.config_entries.async_update_entry(
+                config_entry,
+                data=new_data
+            )
+            
+            # Reload Integration
+            await self.hass.config_entries.async_reload(config_entry.entry_id)
+            
+            return self.async_abort(reason="reconfigure_successful")
+
+        current = config_entry.data
+        
+        # Schema mit aktuellen Werten
+        reconfigure_schema = vol.Schema({
+            vol.Required(
+                CONF_WEATHER_ENTITY,
+                default=current.get(CONF_WEATHER_ENTITY, "weather.home")
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="weather")
+            ),
+            vol.Required(
+                CONF_POWER_ENTITY,
+                default=current.get(CONF_POWER_ENTITY)
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            ),
+            vol.Optional(
+                CONF_PLANT_KWP,
+                default=current.get(CONF_PLANT_KWP)
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=1000)),
+            vol.Optional(
+                CONF_UPDATE_INTERVAL,
+                default=current.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+            ): vol.All(vol.Coerce(int), vol.Range(min=600, max=86400)),
+            
+            vol.Optional(
+                CONF_FORECAST_SOLAR,
+                default=current.get(CONF_FORECAST_SOLAR)
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            ),
+            
+            vol.Optional(
+                CONF_LUX_SENSOR,
+                default=current.get(CONF_LUX_SENSOR)
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor", device_class="illuminance")
+            ),
+            vol.Optional(
+                CONF_TEMP_SENSOR,
+                default=current.get(CONF_TEMP_SENSOR)
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor", device_class="temperature")
+            ),
+            vol.Optional(
+                CONF_WIND_SENSOR,
+                default=current.get(CONF_WIND_SENSOR)
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor", device_class="wind_speed")
+            ),
+            vol.Optional(
+                CONF_UV_SENSOR,
+                default=current.get(CONF_UV_SENSOR)
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            ),
+            
+            vol.Optional(
+                CONF_INVERTER_POWER,
+                default=current.get(CONF_INVERTER_POWER)
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor", device_class="power")
+            ),
+            vol.Optional(
+                CONF_INVERTER_DAILY,
+                default=current.get(CONF_INVERTER_DAILY)
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor", device_class="energy")
+            ),
+        })
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=reconfigure_schema,
+            description_placeholders={
+                "info": "Ändere die Sensoren und Einstellungen. Die Integration wird automatisch neu geladen."
+            }
+        )
+
+    # ✅ Options Flow - Für Benachrichtigungen und Feature-Toggles
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry):
+        """Get the options flow for this handler."""
+        return SolarForecastMLOptionsFlow(config_entry)
+
+
+class SolarForecastMLOptionsFlow(config_entries.OptionsFlow):
+    """Handle options flow for Solar Forecast ML - Benachrichtigungen und Toggles."""
+
+    def __init__(self, config_entry):
+        """Initialize options flow."""
+        self.config_entry = config_entry
+
+    async def async_step_init(self, user_input=None):
+        """Manage the options - Benachrichtigungen und Feature Toggles."""
+        if user_input is not None:
+            # Update die Config Entry
+            new_data = {**self.config_entry.data, **user_input}
+            
+            self.hass.config_entries.async_update_entry(
+                self.config_entry,
+                data=new_data
+            )
+            
+            # Reload Integration
+            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            
+            return self.async_create_entry(title="", data={})
+
+        current = self.config_entry.data
+
+        # Nur Toggles und Benachrichtigungen im Options Flow
+        options_schema = vol.Schema({
+            # Feature Toggles
+            vol.Optional(
+                CONF_DIAGNOSTIC,
+                default=current.get(CONF_DIAGNOSTIC, True)
+            ): cv.boolean,
+            
+            vol.Optional(
+                CONF_HOURLY,
+                default=current.get(CONF_HOURLY, False)
+            ): cv.boolean,
+            
+            # ✅ Notification Toggles
+            vol.Optional(
+                CONF_NOTIFY_FORECAST,
+                default=current.get(CONF_NOTIFY_FORECAST, DEFAULT_NOTIFY_FORECAST),
+                description={"description": "Tägliche Prognose-Benachrichtigung (6:00 Uhr)"}
+            ): cv.boolean,
+            
+            vol.Optional(
+                CONF_NOTIFY_LEARNING,
+                default=current.get(CONF_NOTIFY_LEARNING, DEFAULT_NOTIFY_LEARNING),
+                description={"description": "Lern-Ergebnis-Benachrichtigung (23:00 Uhr)"}
+            ): cv.boolean,
+            
+            vol.Optional(
+                CONF_NOTIFY_INVERTER,
+                default=current.get(CONF_NOTIFY_INVERTER, DEFAULT_NOTIFY_INVERTER),
+                description={"description": "Inverter-Offline-Warnung"}
+            ): cv.boolean,
+            
+            vol.Optional(
+                CONF_NOTIFY_STARTUP,
+                default=current.get(CONF_NOTIFY_STARTUP, DEFAULT_NOTIFY_STARTUP),
+                description={"description": "Start-Benachrichtigung"}
+            ): cv.boolean,
+        })
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=options_schema,
+            description_placeholders={
+                "info": "Aktiviere/Deaktiviere Benachrichtigungen und Features."
+            }
         )

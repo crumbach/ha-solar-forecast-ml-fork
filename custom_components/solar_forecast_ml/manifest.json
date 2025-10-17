@@ -1,11 +1,13 @@
 {
   "domain": "solar_forecast_ml",
   "name": "Solar Forecast ML",
-  "version": "2.1.8-rc1",
+  "version": "2.2.0",
   "documentation": "https://github.com/Zara-Toorox/ha-solar-forecast-ml",
   "issue_tracker": "https://github.com/Zara-Toorox/ha-solar-forecast-ml/issues",
   "requirements": [],
   "codeowners": ["@Zara-Toorox"],
   "config_flow": true,
+  "dependencies": [],
+  "integration_type": "service",
   "iot_class": "local_polling"
 }

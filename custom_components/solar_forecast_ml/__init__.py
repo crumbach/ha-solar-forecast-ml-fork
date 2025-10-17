@@ -16,10 +16,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Forward setup to sensor platform
     await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
     
+    # ✅ FIX: Zeile mit "options_flow" ENTFERNT - das ist keine gültige Platform!
+    
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    # ✅ FIX: "options_flow" aus der Liste entfernt
     unload_ok = await hass.config_entries.async_unload_platforms(entry, ["sensor"])
     
     if unload_ok:

@@ -6,7 +6,8 @@ import os
 from typing import Dict
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
-from homeassistant.const import UnitOfEnergy, UnitOfTime
+from homeassistant.components.button import ButtonEntity  # ✅ FIX: Korrekter Import
+from homeassistant.const import UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.config_entries import ConfigEntry
@@ -15,7 +16,6 @@ from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
 )
 from homeassistant.helpers.event import async_track_time_change
-# Der 'history' Import ist NICHT mehr nötig
 
 from .const import (
     DOMAIN,
@@ -28,16 +28,15 @@ from .const import (
     CONF_WIND_SENSOR,
     CONF_UV_SENSOR,
     CONF_FORECAST_SOLAR,
-    CONF_INVERTER_POWER,  # Neu
-    CONF_INVERTER_DAILY,  # Neu
-    CONF_DIAGNOSTIC,  # Neu
-    CONF_HOURLY,  # Neu
-    # CONF_HISTORY_ENTITY entfernt
+    CONF_INVERTER_POWER,
+    CONF_INVERTER_DAILY,
+    CONF_DIAGNOSTIC,
+    CONF_HOURLY,
     WEIGHTS_FILE,
     HISTORY_FILE,
     DEFAULT_BASE_CAPACITY,
     DEFAULT_KWP_TO_KWH_FACTOR,
-    DEFAULT_INVERTER_THRESHOLD,  # Neu
+    DEFAULT_INVERTER_THRESHOLD,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -106,6 +105,8 @@ async def async_setup_entry(
     # Neu: Hourly-Sensor, wenn enabled
     if config.get(CONF_HOURLY, False):
         entities.append(NextHourSensor(coordinator, "naechste_stunde", "Solar Forecast ML Prognose Nächste Stunde"))
+    # Neu: Manual Button
+    entities.append(ManualForecastButton(coordinator, "manual_forecast", "Solar Forecast ML Manuelle Prognose"))
     async_add_entities(entities)
 
 class SolarForecastCoordinator(DataUpdateCoordinator):
@@ -135,7 +136,7 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
 
         # Neu: Toggles
         self.enable_diagnostic = config.get(CONF_DIAGNOSTIC, True)
-        self.enable_hourly = config.get(CONF_HOURLY, False)
+        self.enable_hourly = config.get(CONF_HOURLY, False)  # ✅ FIX: Vervollständigt
 
         plant_kwp = config.get(CONF_PLANT_KWP)
         self.base_capacity = plant_kwp * DEFAULT_KWP_TO_KWH_FACTOR if plant_kwp else DEFAULT_BASE_CAPACITY
@@ -145,13 +146,13 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
         self.daily_predictions = {}
         self.accuracy = 0.0
         self.last_forecast_date = None
-        self.last_inverter_notification = None  # Neu: Anti-Spam für Notifications
-        self.last_update = datetime.now()  # Neu: Für Status-Tracking
-        self.next_hour_pred = 0.0  # Neu: Für hourly Cache
+        self.last_inverter_notification = None
+        self.last_update = datetime.now()
+        self.next_hour_pred = 0.0
 
         self._load_weights()
-        hass.async_create_task(self._load_history())  # Fix: Async Task statt await in sync __init__
-        self._load_last_data()  # Neu: Lade letzten bekannten State für Restart-Resilienz
+        hass.async_create_task(self._load_history())
+        self._load_last_data()
         
         hass.async_create_task(self._initial_setup()) 
 
@@ -178,7 +179,6 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
         status_emoji = "✅" if hours_since_forecast < 1 else "⚠️"
         return f"{status_emoji} Läuft normal | Letzte Prognose: {hours_since_forecast:.1f}h her | Nächstes Learning: {next_learning}h | Inverter: {inverter_status} | Genauigkeit: {self.accuracy:.0f}%"
 
-    # Neu: Hourly Forecast holen (nur nächste Stunde)
     async def _get_next_hour_forecast(self):
         """Hole stündliche Wettervorhersage für nächste Stunde."""
         try:
@@ -190,13 +190,11 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                 return_response=True,
             )
             forecast = response.get(self.weather_entity, {}).get("forecast", [])
-            # Nimm die erste (nächste) Stunde
             return forecast[0] if forecast else None
         except Exception as e:
             _LOGGER.error(f"Fehler beim Abrufen der stündlichen Wettervorhersage: {e}")
             return None
 
-    # Neu: Prognose für nächste Stunde berechnen
     async def _predict_next_hour(self):
         """Berechne Prognose für nächste Stunde."""
         if not self.enable_hourly:
@@ -215,11 +213,10 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
             return 0.0
 
     def _predict_hour(self, forecast: Dict, sensor_data: Dict) -> float:
-        """Erstelle stündliche Prognose (ähnlich _predict_day, aber skaliert)."""
+        """Erstelle stündliche Prognose."""
         LUX_MAX_NORM = 100000.0 
         try:
             condition = forecast.get('condition', 'cloudy')
-            # Neu: Expliziter Nacht-Clamp
             if condition in ['clear-night', 'night']:
                 return 0.0
             cloud_coverage = forecast.get('cloud_coverage', 50)
@@ -232,15 +229,12 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
             if precipitation and precipitation > 0:
                 weather_factor *= 0.5
             
-            # Skaliere auf Stunde (ca. 1/10 der daily, angepasst an Sonnenstand)
             hour = datetime.fromisoformat(forecast.get('datetime', datetime.now().isoformat())).hour
-            # Neu: Robuster Sonnenstand (Nacht = 0)
             if hour < 6 or hour > 20:
                 return 0.0
-            solar_hour_factor = max(0, 1 - abs(hour - 12) / 6)  # Peak um Mittag
+            solar_hour_factor = max(0, 1 - abs(hour - 12) / 6)
             prediction_ml = (self.base_capacity / 10) * weather_factor * self.weights['base'] * solar_hour_factor
             
-            # Sensor-Beiträge (skaliert)
             for sensor_type in ['lux', 'temp', 'wind', 'uv']:
                 if sensor_type in sensor_data:
                     sensor_value = sensor_data[sensor_type]
@@ -248,9 +242,8 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                         norm_value = sensor_value / LUX_MAX_NORM
                         prediction_ml += norm_value * self.weights['lux'] * (self.base_capacity / 10) * 0.1 
                     else:
-                        prediction_ml += sensor_value * self.weights[sensor_type] / 10  # Rough Scale
+                        prediction_ml += sensor_value * self.weights[sensor_type] / 10
 
-            # Inverter-Faktor
             if 'inverter_factor' in sensor_data:
                 prediction_ml *= sensor_data['inverter_factor']
 
@@ -302,7 +295,6 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
         except Exception as e:
             _LOGGER.error(f"Fehler beim Speichern der Historie: {e}")
 
-    # Neu: Methode zum Laden des letzten bekannten States
     def _load_last_data(self):
         """Lade letzten bekannten Prognose-Wert für Restart-Resilienz."""
         try:
@@ -310,29 +302,27 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                 today_iso = date.today().isoformat()
                 yesterday_iso = (date.today() - timedelta(days=1)).isoformat()
                 
-                # Priorisiere heute, fallback zu gestern
                 last_entry = self.daily_predictions.get(today_iso) or self.daily_predictions.get(yesterday_iso)
                 if last_entry and 'predicted' in last_entry:
-                    # Setze initiale Data – vermeidet 0 nach Restart
-                    morgen_fallback = last_entry.get('predicted_morgen', self.base_capacity * 0.8)  # Schätz-Morgen aus Base oder History
+                    morgen_fallback = last_entry.get('predicted_morgen', self.base_capacity * 0.8)
                     self.data = {
                         "heute": round(last_entry['predicted'], 2),
                         "morgen": round(morgen_fallback, 2),
                         "genauigkeit": round(self.accuracy, 1),
                     }
-                    _LOGGER.info(f"💾 Letzter Wert geladen: Heute {self.data['heute']:.2f} kWh (von {today_iso if today_iso in self.daily_predictions else yesterday_iso})")
+                    _LOGGER.info(f"💾 Letzter Wert geladen: Heute {self.data['heute']:.2f} kWh")
                 else:
                     _LOGGER.debug("Keine History für Last-State – starte mit Defaults")
         except Exception as e:
             _LOGGER.warning(f"Last-State-Laden fehlgeschlagen: {e}")
 
     async def _initial_setup(self):
-        """Initialer Setup (nur Laden und Kalibrierung)."""
+        """Initialer Setup."""
         self._calibrate_base_capacity()
         await self._notify_start_success()
 
     async def _notify_start_success(self):
-        """Benachrichtigung über erfolgreichen Start der Integration."""
+        """Benachrichtigung über erfolgreichen Start."""
         try:
             await self.hass.services.async_call(
                 "persistent_notification",
@@ -350,18 +340,17 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
         except Exception as e:
             _LOGGER.warning(f"Start-Benachrichtigung fehlgeschlagen: {e}")
 
-    # Neu: Notification für Inverter offline (Anti-Spam: max 1x/Tag)
     async def _notify_inverter_offline(self):
         """Benachrichtigung bei Inverter-Ausfall."""
         if self.last_inverter_notification == date.today().isoformat():
-            return  # Anti-Spam
+            return
         try:
             await self.hass.services.async_call(
                 "persistent_notification",
                 "create",
                 {
                     "title": "⚠️ SolarForecastML: Inverter scheint offline",
-                    "message": "Aktueller Power ist 0W – Prognose auf 0 kWh angepasst. Check deinen Sensor!",
+                    "message": "Aktueller Power ist 0W – Prognose auf 0 kWh angepasst.",
                     "notification_id": "solar_forecast_ml_inverter_offline"
                 }
             )
@@ -381,9 +370,7 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                     self.base_capacity = avg
                     self.weights['base_capacity'] = avg
                     self.hass.async_create_task(self._save_weights())
-                    _LOGGER.info(f"⚖️ Kalibrierte Base Capacity: {self.base_capacity:.2f} kWh aus {len(actuals)} Tagen")
-            else:
-                _LOGGER.warning("⚠️ Keine validen Daten für Kalibrierung - nutze Default.")
+                    _LOGGER.info(f"⚖️ Kalibrierte Base Capacity: {self.base_capacity:.2f} kWh")
         except Exception as e:
             _LOGGER.warning(f"Kalibrierung fehlgeschlagen: {e}")
 
@@ -393,7 +380,7 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
         await self._create_forecast()
 
     async def _midnight_learning(self, now):
-        """Lerne um 23:00 Uhr, bevor der Zähler zurückgesetzt wird."""
+        """Lerne um 23:00 Uhr."""
         _LOGGER.info("🌒 Starte Lernprozess um 23:00 Uhr...")
         try:
             today = date.today().isoformat()
@@ -408,9 +395,8 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                         self._save_history()
                         _LOGGER.info(f"📚 Tagesertrag {today}: {actual_value:.2f} kWh gespeichert")
                 except ValueError:
-                    _LOGGER.warning(f"Ungültiger Wert von {self.power_entity}: {actual_power.state}")
+                    _LOGGER.warning(f"Ungültiger Wert: {actual_power.state}")
 
-            # Lernprozess für gestern
             yesterday = (date.today() - timedelta(days=1)).isoformat()
             if yesterday in self.daily_predictions:
                 pred_data = self.daily_predictions[yesterday]
@@ -420,7 +406,7 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                 if actual > 0 and predicted > 0:
                     error = actual - predicted
                     error_percent = (error / actual) * 100
-                    _LOGGER.info(f"📚 Learning von {yesterday}: Vorhergesagt={predicted:.2f} kWh, Tatsächlich={actual:.2f} kWh, Fehler={error_percent:.1f}%")
+                    _LOGGER.info(f"📚 Learning: Vorhergesagt={predicted:.2f}, Tatsächlich={actual:.2f}, Fehler={error_percent:.1f}%")
                     
                     learning_rate = 0.01
                     self.weights['base'] += learning_rate * (error / self.base_capacity)
@@ -442,8 +428,6 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                     self._save_weights()
                     self._calculate_accuracy()
                     self._calibrate_base_capacity()
-                else:
-                    _LOGGER.warning(f"⚠️ Kann nicht lernen von {yesterday}: actual={actual}, predicted={predicted}")
                     
         except Exception as e:
             _LOGGER.error(f"Fehler beim Midnight Learning: {e}", exc_info=True)
@@ -462,7 +446,7 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
             if errors:
                 avg_error = sum(errors) / len(errors)
                 self.accuracy = max(0, 100 - avg_error)
-                _LOGGER.info(f"📊 Genauigkeit: {self.accuracy:.1f}% (basierend auf {len(errors)} Tagen)")
+                _LOGGER.info(f"📊 Genauigkeit: {self.accuracy:.1f}%")
         except Exception as e:
             _LOGGER.warning(f"Genauigkeitsberechnung fehlgeschlagen: {e}")
 
@@ -481,7 +465,7 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
             today = date.today().isoformat()
             self.daily_predictions[today] = {
                 'predicted': heute_kwh,
-                'predicted_morgen': morgen_kwh,  # Neu: Speichere Morgen für Last-State-Fallback
+                'predicted_morgen': morgen_kwh,
                 'features': sensor_data,
                 'timestamp': datetime.now().isoformat()
             }
@@ -496,13 +480,13 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
             })
             
             await self._notify_forecast(heute_kwh, morgen_kwh, self.accuracy)
-            _LOGGER.info(f"☀️ Prognose - Heute: {heute_kwh:.2f} kWh, Morgen: {morgen_kwh:.2f} kWh (Genauigkeit: {self.accuracy:.1f}%)")
+            _LOGGER.info(f"☀️ Prognose - Heute: {heute_kwh:.2f} kWh, Morgen: {morgen_kwh:.2f} kWh")
             
         except Exception as e:
             _LOGGER.error(f"Fehler beim Erstellen der Prognose: {e}", exc_info=True)
 
     async def _async_update_data(self):
-        """Sammle Daten und triggere Prognose, falls nötig."""
+        """Sammle Daten und triggere Prognose."""
         try:
             today = date.today()
             if self.last_forecast_date != today:
@@ -514,23 +498,19 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                 if today_iso in self.daily_predictions:
                     self.daily_predictions[today_iso]['features'] = sensor_data
                     self._save_history()
-                _LOGGER.debug(f"📡 Sensordaten gesammelt: {sensor_data}")
             
-            # Neu: Fallback – Wenn kein Update, behalte last_data (vermeidet 0)
             if not self.data:
                 self._load_last_data()
 
-            # Neu: Hourly Prognose, falls enabled
             if self.enable_hourly:
                 await self._predict_next_hour()
             
-            self.last_update = datetime.now()  # Update Timestamp
+            self.last_update = datetime.now()
             
             return self.data or {"heute": 0, "morgen": 0, "genauigkeit": self.accuracy}
             
         except Exception as e:
             _LOGGER.error(f"Fehler beim Update: {e}", exc_info=True)
-            # Neu: Bei Error last_data zurückgeben, statt 0
             if not self.data:
                 self._load_last_data()
             return self.data or {"heute": 0, "morgen": 0, "genauigkeit": self.accuracy}
@@ -567,13 +547,11 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                         try:
                             sensor_data[key] = float(state.state)
                         except ValueError:
-                            _LOGGER.warning(f"Ungültiger Wert von {sensor}: {state.state} – ignoriere")
                             sensor_data[key] = 0.0
 
-            # Neu: Robuster Inverter-Check (OR-Logik: power OR daily = 1.0)
-            inverter_factor = 1.0  # Default on, wenn nichts konfiguriert
+            inverter_factor = 1.0
             if not self.inverter_power and not self.inverter_daily:
-                _LOGGER.debug("Inverter nicht konfiguriert – Faktor 1.0 (keine Skalierung)")
+                pass
             else:
                 power_on = False
                 daily_on = False
@@ -584,9 +562,7 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                             power_value = float(power_state.state)
                             if power_value > DEFAULT_INVERTER_THRESHOLD:
                                 power_on = True
-                                _LOGGER.debug(f"Inverter Power: {power_value}W > {DEFAULT_INVERTER_THRESHOLD} – on")
                         except ValueError:
-                            _LOGGER.warning(f"Ungültiger Power-Wert von {self.inverter_power}: {power_state.state} – Fallback on")
                             power_on = True
                 if self.inverter_daily:
                     daily_state = self.hass.states.get(self.inverter_daily)
@@ -595,28 +571,21 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                             daily_value = float(daily_state.state)
                             if daily_value > 0.1:
                                 daily_on = True
-                                _LOGGER.debug(f"Inverter Daily: {daily_value} kWh > 0.1 – on")
                         except ValueError:
-                            _LOGGER.warning(f"Ungültiger Daily-Wert von {self.inverter_daily}: {daily_state.state} – Fallback on")
                             daily_on = True
                 inverter_factor = 1.0 if power_on or daily_on else 0.0
                 if inverter_factor == 0.0:
                     await self._notify_inverter_offline()
-                    _LOGGER.warning(f"Inverter offline (Power: {power_on}, Daily: {daily_on}) – Faktor 0.0")
-                else:
-                    _LOGGER.debug(f"Inverter on (Power: {power_on}, Daily: {daily_on}) – Faktor 1.0")
 
             sensor_data['inverter_factor'] = inverter_factor
 
         except Exception as e:
-            _LOGGER.warning(f"Fehler beim Lesen der Sensoren: {e} – Fallback Faktor 1.0")
+            _LOGGER.warning(f"Fehler beim Lesen der Sensoren: {e}")
             sensor_data['inverter_factor'] = 1.0
         return sensor_data
 
     def _predict_day(self, forecast: Dict, sensor_data: Dict, is_today: bool) -> float:
-        """Erstelle Prognose mit gelernten Gewichten. KORREKTUR: Lux-Skalierung."""
-        
-        # KORREKTUR: Normierungsfaktor für Lichtsensoren
+        """Erstelle Prognose mit gelernten Gewichten."""
         LUX_MAX_NORM = 100000.0 
         
         try:
@@ -631,74 +600,31 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
             if precipitation and precipitation > 0:
                 weather_factor *= 0.5
             
-            # Basisprognose
             prediction_ml = self.base_capacity * weather_factor * self.weights['base']
             
-            # Addiere skalierte Sensor-Beiträge
             for sensor_type in ['lux', 'temp', 'wind', 'uv']:
                 if sensor_type in sensor_data:
                     sensor_value = sensor_data[sensor_type]
                     
                     if sensor_type == 'lux':
-                        # KORREKTUR: Teile Lux-Wert durch Maximalwert zur Normierung (0 bis 1)
                         norm_value = sensor_value / LUX_MAX_NORM
                         prediction_ml += norm_value * self.weights['lux'] * self.base_capacity * 0.1 
                     else:
                         prediction_ml += sensor_value * self.weights[sensor_type]
             
-            # Neu: Skaliere mit Inverter-Faktor (0 = Prognose auf 0)
             if 'inverter_factor' in sensor_data:
                 prediction_ml *= sensor_data['inverter_factor']
-                _LOGGER.debug(f"Inverter-Skalierung: {sensor_data['inverter_factor']}")
             
-            # Blending mit Forecast.Solar (nur für heute)
             if is_today and 'fs' in sensor_data:
                 fs_value = sensor_data['fs']
                 fs_blend_factor = max(0.0, min(1.0, self.weights.get('fs', 0.5)))
                 blended_prediction = (prediction_ml * (1 - fs_blend_factor)) + (fs_value * fs_blend_factor)
-                _LOGGER.debug(f"Blending: ML={prediction_ml:.2f}, FS={fs_value:.2f}, Faktor={fs_blend_factor:.2f}")
                 prediction_ml = blended_prediction
             
             return max(0, prediction_ml)
         except Exception as e:
             _LOGGER.error(f"Fehler bei Prognose: {e}")
             return 0.0
-
-    async def _notify_success(self, count: int):
-        """Erfolgs-Benachrichtigung."""
-        try:
-            await self.hass.services.async_call(
-                "persistent_notification",
-                "create",
-                {
-                    "title": "✅ SolarForecastML Setup Erfolgreich",
-                    "message": (
-                        f"• {count} historische Einträge importiert\n"
-                        f"• Basiskapazität: {self.base_capacity:.2f} kWh\n"
-                        f"• Modell bereit für Prognosen!"
-                    ),
-                    "notification_id": "solar_forecast_ml_history_success"
-                }
-            )
-            _LOGGER.info("📱 Erfolgs-Benachrichtigung gesendet")
-        except Exception as e:
-            _LOGGER.warning(f"Erfolgs-Benachrichtigung fehlgeschlagen: {e}")
-
-    async def _notify_error(self, message: str):
-        """Fehler-Benachrichtigung."""
-        try:
-            await self.hass.services.async_call(
-                "persistent_notification",
-                "create",
-                {
-                    "title": "❌ SolarForecastML Fehler",
-                    "message": message,
-                    "notification_id": "solar_forecast_ml_history_error"
-                }
-            )
-            _LOGGER.info("📱 Fehler-Benachrichtigung gesendet")
-        except Exception as e:
-            _LOGGER.warning(f"Fehler-Benachrichtigung fehlgeschlagen: {e}")
 
     async def _notify_forecast(self, today_kwh: float, tomorrow_kwh: float, accuracy: float):
         """Tägliche Prognose-Benachrichtigung."""
@@ -716,9 +642,11 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                     "notification_id": "solar_forecast_ml_daily"
                 }
             )
-            _LOGGER.info("📱 Prognose-Benachrichtigung gesendet")
         except Exception as e:
             _LOGGER.warning(f"Prognose-Benachrichtigung fehlgeschlagen: {e}")
+
+
+# ========== SENSOR KLASSEN ==========
 
 class NextHourSensor(CoordinatorEntity, SensorEntity):
     """Nächste Stunde Prognose Sensor."""
@@ -733,41 +661,37 @@ class NextHourSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        """Return the state of the sensor."""
         return round(self.coordinator.next_hour_pred, 2)
 
     @property
     def extra_state_attributes(self):
-        """Details für die Stunde."""
         return {
             "next_hour_start": (datetime.now() + timedelta(hours=1)).strftime("%H:%M"),
-            "weather_condition": "N/A",  # Könnte erweitert werden
         }
 
+
 class DiagnosticStatusSensor(CoordinatorEntity, SensorEntity):
-    """Diagnostic Status Sensor für mehr Feedback."""
+    """Diagnostic Status Sensor."""
     def __init__(self, coordinator, key, name):
         super().__init__(coordinator)
         self._attr_unique_id = f"{DOMAIN}_{key}"
         self._attr_name = name
         self._key = key
-        self._attr_state_class = None  # Fix: Kein state_class für Text-Sensor
+        self._attr_state_class = None
         self._attr_icon = "mdi:information-outline"
 
     @property
     def native_value(self):
-        """Status-Text als State."""
         return self.coordinator._get_status_text()
 
     @property
     def extra_state_attributes(self):
-        """Details als Attributes."""
         return {
             "last_update": self.coordinator.last_update.isoformat(),
             "next_learning": "23:00",
-            "inverter_status": "Online" if self.coordinator.inverter_power else "Nicht konfiguriert",
             "accuracy": self.coordinator.accuracy,
         }
+
 
 class SolarForecastSensor(CoordinatorEntity, SensorEntity):
     """Solar Forecast Sensor."""
@@ -782,8 +706,8 @@ class SolarForecastSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        """Return the state of the sensor."""
         return self.coordinator.data.get(self._day_key)
+
 
 class SolarAccuracySensor(CoordinatorEntity, SensorEntity):
     """Solar Forecast Accuracy Sensor."""
@@ -798,5 +722,37 @@ class SolarAccuracySensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        """Return the state of the sensor."""
         return round(self.coordinator.data.get(self._key, 0.0), 2)
+
+
+# ✅ FIX: Fehlende ManualForecastButton Klasse
+class ManualForecastButton(CoordinatorEntity, ButtonEntity):
+    """Button zum manuellen Triggern der Prognose."""
+    
+    def __init__(self, coordinator, key, name):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_{key}"
+        self._attr_name = name
+        self._key = key
+        self._attr_icon = "mdi:refresh"
+        self._attr_device_class = "restart"
+
+    async def async_press(self):
+        """Handle button press - trigger forecast."""
+        _LOGGER.info("🔄 Manuelle Prognose durch Button ausgelöst")
+        try:
+            await self.coordinator._create_forecast()
+            await self.hass.services.async_call(
+                "persistent_notification",
+                "create",
+                {
+                    "title": "✅ Prognose manuell erstellt",
+                    "message": (
+                        f"Heute: {self.coordinator.data.get('heute', 0):.2f} kWh\n"
+                        f"Morgen: {self.coordinator.data.get('morgen', 0):.2f} kWh"
+                    ),
+                    "notification_id": "solar_forecast_ml_manual"
+                }
+            )
+        except Exception as e:
+            _LOGGER.error(f"Fehler beim manuellen Forecast: {e}", exc_info=True)
