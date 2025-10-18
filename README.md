@@ -1,7 +1,7 @@
 # 🌞 Solar Forecast ML for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](https://github.com/Zara-Toorox/ha-solar-forecast-ml/releases)
+[![Version](https://img.shields.io/badge/version-3.0.1-blue.svg)](https://github.com/Zara-Toorox/ha-solar-forecast-ml/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 **Intelligent solar yield forecasting with Machine Learning for Home Assistant**

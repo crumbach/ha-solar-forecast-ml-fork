@@ -139,6 +139,10 @@ async def async_setup_entry(
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][f"{entry.entry_id}_coordinator"] = coordinator
     
+    # 🔧 FIX v3.0.1: Lade Last-Data VOR dem ersten Refresh
+    await coordinator._load_history()
+    coordinator._load_last_data()
+    
     # Jetzt erst refresh
     await coordinator.async_config_entry_first_refresh()
     
@@ -228,7 +232,8 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
         hass.async_create_task(self._load_history())
         hass.async_create_task(self._load_hourly_profile())
         
-        hass.async_create_task(self._initial_setup()) 
+        # 🔧 FIX v3.0.1: _initial_setup wird jetzt in async_setup_entry gemacht
+        # hass.async_create_task(self._initial_setup())  # Entfernt! 
 
         # Zeitplanung
         async_track_time_change(hass, self._morning_forecast, hour=6, minute=0, second=0)
@@ -917,6 +922,9 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
             sensor_data = await self._get_sensor_data()
             heute_kwh = self._predict_day(forecast_data[0], sensor_data, is_today=True)
             morgen_kwh = self._predict_day(forecast_data[1], sensor_data, is_today=False)
+            
+            # 🔧 FIX v3.0.1: Definiere 'now' zuerst!
+            now = datetime.now()
             
             # Intelligenter Nacht-Fix: Nur bei tiefer Nacht (vor 5 Uhr oder nach 21 Uhr)
             if self._is_night_time() and (now.hour < 5 or now.hour >= 21):
