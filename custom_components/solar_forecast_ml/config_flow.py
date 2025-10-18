@@ -30,6 +30,7 @@ from .const import (
     DEFAULT_NOTIFY_LEARNING,
     DEFAULT_NOTIFY_INVERTER,
     DEFAULT_NOTIFY_STARTUP,
+    CONF_CURRENT_POWER,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -82,6 +83,11 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 selector.EntitySelectorConfig(domain="sensor")
             ),
             
+            # v2.3.0: Neuer optionaler Sensor für Tagesprofil-Learning
+            vol.Optional(CONF_CURRENT_POWER): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor", device_class="power")
+            ),
+            
             # Optionale Sensoren
             vol.Optional(CONF_LUX_SENSOR): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="sensor", device_class="illuminance")
@@ -108,7 +114,7 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_DIAGNOSTIC, default=True): cv.boolean,
             vol.Optional(CONF_HOURLY, default=False): cv.boolean,
             
-            # ✅ NEU: Notification Toggles
+            # Notification Toggles
             vol.Optional(CONF_NOTIFY_FORECAST, default=DEFAULT_NOTIFY_FORECAST): cv.boolean,
             vol.Optional(CONF_NOTIFY_LEARNING, default=DEFAULT_NOTIFY_LEARNING): cv.boolean,
             vol.Optional(CONF_NOTIFY_INVERTER, default=DEFAULT_NOTIFY_INVERTER): cv.boolean,
@@ -124,7 +130,6 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
         )
 
-    # ✅ NEU: Reconfigure Flow - Für Änderung der Sensoren
     async def async_step_reconfigure(self, user_input=None):
         """Handle reconfiguration of the integration."""
         config_entry = self.hass.config_entries.async_get_entry(
@@ -156,7 +161,7 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         current = config_entry.data
         
-        # Schema mit aktuellen Werten - None wird zu "" für EntitySelector
+        # Schema mit aktuellen Werten
         schema_dict = {
             vol.Required(
                 CONF_WEATHER_ENTITY,
@@ -176,7 +181,7 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ): vol.All(vol.Coerce(int), vol.Range(min=600, max=86400)),
         }
         
-        # Plant kWp nur hinzufügen wenn gesetzt oder leer lassen
+        # Plant kWp
         if current.get(CONF_PLANT_KWP):
             schema_dict[vol.Optional(CONF_PLANT_KWP, default=current.get(CONF_PLANT_KWP))] = vol.All(
                 vol.Coerce(float), vol.Range(min=0.5, max=1000)
@@ -188,9 +193,10 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         
         reconfigure_schema = vol.Schema(schema_dict)
         
-        # Optionale Entity-Felder nur hinzufügen wenn sie bereits gesetzt sind
+        # Optionale Entity-Felder
         optional_entities = {
             CONF_FORECAST_SOLAR: ("sensor", None),
+            CONF_CURRENT_POWER: ("sensor", "power"),
             CONF_LUX_SENSOR: ("sensor", "illuminance"),
             CONF_TEMP_SENSOR: ("sensor", "temperature"),
             CONF_WIND_SENSOR: ("sensor", "wind_speed"),
@@ -202,17 +208,13 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         schema_dict = reconfigure_schema.schema
         for key, (domain, device_class) in optional_entities.items():
             current_value = current.get(key)
+            config = selector.EntitySelectorConfig(domain=domain)
+            if device_class:
+                config = selector.EntitySelectorConfig(domain=domain, device_class=device_class)
+            
             if current_value:
-                # Nur hinzufügen wenn bereits gesetzt
-                config = selector.EntitySelectorConfig(domain=domain)
-                if device_class:
-                    config = selector.EntitySelectorConfig(domain=domain, device_class=device_class)
                 schema_dict[vol.Optional(key, default=current_value)] = selector.EntitySelector(config)
             else:
-                # Leeres Feld für neue Sensoren
-                config = selector.EntitySelectorConfig(domain=domain)
-                if device_class:
-                    config = selector.EntitySelectorConfig(domain=domain, device_class=device_class)
                 schema_dict[vol.Optional(key)] = selector.EntitySelector(config)
         
         reconfigure_schema = vol.Schema(schema_dict)
@@ -225,38 +227,40 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
         )
 
-    # ✅ Options Flow - Für Benachrichtigungen und Feature-Toggles
     @staticmethod
     @callback
     def async_get_options_flow(config_entry):
         """Get the options flow for this handler."""
-        return SolarForecastMLOptionsFlow(config_entry)
+        return SolarForecastMLOptionsFlow()
 
 
 class SolarForecastMLOptionsFlow(config_entries.OptionsFlow):
     """Handle options flow for Solar Forecast ML - Benachrichtigungen und Toggles."""
 
-    def __init__(self, config_entry):
-        """Initialize options flow."""
-        self.config_entry = config_entry
+    # ✅ FIX: ENTFERNT self.config_entry Zuweisung (deprecated)
+    # Nutze stattdessen self.handler für Zugriff auf entry_id
 
     async def async_step_init(self, user_input=None):
         """Manage the options - Benachrichtigungen und Feature Toggles."""
+        
+        # ✅ FIX: Hole config_entry über handler statt direkter Zuweisung
+        config_entry = self.hass.config_entries.async_get_entry(self.handler)
+        
         if user_input is not None:
             # Update die Config Entry
-            new_data = {**self.config_entry.data, **user_input}
+            new_data = {**config_entry.data, **user_input}
             
             self.hass.config_entries.async_update_entry(
-                self.config_entry,
+                config_entry,
                 data=new_data
             )
             
             # Reload Integration
-            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            await self.hass.config_entries.async_reload(config_entry.entry_id)
             
             return self.async_create_entry(title="", data={})
 
-        current = self.config_entry.data
+        current = config_entry.data
 
         # Nur Toggles und Benachrichtigungen im Options Flow
         options_schema = vol.Schema({
@@ -271,7 +275,7 @@ class SolarForecastMLOptionsFlow(config_entries.OptionsFlow):
                 default=current.get(CONF_HOURLY, False)
             ): cv.boolean,
             
-            # ✅ Notification Toggles
+            # Notification Toggles
             vol.Optional(
                 CONF_NOTIFY_FORECAST,
                 default=current.get(CONF_NOTIFY_FORECAST, DEFAULT_NOTIFY_FORECAST),

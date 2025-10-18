@@ -2,131 +2,124 @@
   "config": {
     "step": {
       "user": {
-        "title": "Solar Forecast ML",
-        "description": "Konfiguriere deine intelligente Solarprognose.\n\nTipp: Gib die Größe deiner Anlage in kWp an, um die initialen Prognosen zu verbessern.\n\nAlle Einstellungen können später geändert werden!",
+        "title": "Solar Forecast ML - Einrichtung",
+        "description": "Konfiguriere deine Solar Forecast ML Integration. Alle Einstellungen können später geändert werden.",
         "data": {
-          "weather_entity": "Wetter-Entität",
-          "power_entity": "Sensor für täglichen Solar-Ertrag (kWh)",
-          "plant_kwp": "Größe der Solaranlage in kWp (optional)",
-          "update_interval": "Update-Intervall in Sekunden",
-          "forecast_solar_sensor": "Weiterer Prognose-Sensor (optional)",
-          "lux_sensor": "Lux-Sensor (optional)",
-          "temp_sensor": "Temperatur-Sensor (optional)",
-          "wind_sensor": "Wind-Sensor (optional)",
-          "uv_sensor": "UV-Sensor (optional)",
-          "inverter_power_sensor": "Inverter-Power-Sensor (aktueller Ertrag in W, optional)",
-          "inverter_daily_yield": "Inverter-Tagesertrag (kWh, optional)",
-          "enable_diagnostic": "Diagnostic-Status-Sensor aktivieren",
+          "weather_entity": "Wetter-Entity",
+          "power_entity": "Tages-Solarertrag Sensor",
+          "plant_kwp": "Anlagenleistung (kWp)",
+          "update_interval": "Aktualisierungsintervall (Sekunden)",
+          "forecast_solar_sensor": "Forecast.Solar Sensor (optional)",
+          "current_power_sensor": "Aktuelle Leistung Sensor (optional)",
+          "lux_sensor": "Lux Sensor (optional)",
+          "temp_sensor": "Temperatur Sensor (optional)",
+          "wind_sensor": "Windgeschwindigkeit Sensor (optional)",
+          "uv_sensor": "UV-Index Sensor (optional)",
+          "inverter_power_sensor": "Wechselrichter Leistung Sensor (optional)",
+          "inverter_daily_yield": "Wechselrichter Tagesertrag Sensor (optional)",
+          "enable_diagnostic": "Diagnose-Sensor aktivieren",
           "enable_hourly": "Nächste-Stunde-Prognose aktivieren",
-          "notify_forecast": "Tägliche Prognose-Benachrichtigung (6:00 Uhr)",
-          "notify_learning": "Learning-Ergebnis-Benachrichtigung (23:00 Uhr)",
-          "notify_inverter": "Inverter-Offline-Warnung",
+          "notify_forecast": "Tägliche Prognose-Benachrichtigung (6:00)",
+          "notify_learning": "Lern-Ergebnis-Benachrichtigung (23:00)",
+          "notify_inverter": "Wechselrichter-Offline-Warnung",
           "notify_startup": "Start-Benachrichtigung"
         },
         "data_description": {
-          "weather_entity": "Empfehlung: DWD Wetter für präzise Vorhersagen in Deutschland.",
-          "power_entity": "Dieser Sensor muss sich täglich auf 0 zurücksetzen (z.B. sensor.solar_daily_yield).",
-          "plant_kwp": "Beispiel: 10.5 kWp. Wird für bessere Startprognosen genutzt; das System lernt danach automatisch.",
-          "update_interval": "Wie oft Sensordaten gesammelt werden sollen. Die eigentliche Prognose wird nur einmal täglich morgens erstellt.",
-          "forecast_solar_sensor": "Ein Sensor wie sensor.forecast_solar_today zum Blenden mit unserem ML-Modell (optional).",
-          "lux_sensor": "Illuminanz-Sensor (z.B. aus Wetterstation) für Lichtstärke-Einfluss (optional).",
-          "temp_sensor": "Temperatur-Sensor für Wärmeeinfluss auf Ertrag (optional).",
-          "wind_sensor": "Windgeschwindigkeit-Sensor (negativer Einfluss bei Starkwind, optional).",
-          "uv_sensor": "UV-Index-Sensor für Strahlungseinfluss (optional).",
-          "inverter_power_sensor": "Dein Sensor für aktuellen Solar-Ertrag (z.B. sensor.solar_current_power in W). Checkt, ob mehr als 10W (Inverter on) – hilft, Prognosen bei Ausfällen auf 0 zu setzen.",
-          "inverter_daily_yield": "Dein Sensor für kumulativen Tagesertrag (z.B. sensor.solar_daily_production aus Fronius/SMA/Anker, in kWh). Optional, für robuste Checks bei Nacht/Akku-Umschaltungen (mehr als 0.1 kWh = Tag aktiv).",
-          "enable_diagnostic": "Aktiviert Solar Forecast ML Status-Sensor im Dashboard – zeigt Läuft normal mit Details (z.B. Inverter-Status). Super für mehr Transparenz.",
-          "enable_hourly": "Aktiviert Solar Forecast ML Prognose Nächste Stunde-Sensor (kWh). Basierend auf stündlicher Wettervorhersage – ideal für Automatisierungen wie EV-Laden in Peak-Zeit.",
-          "notify_forecast": "Zeigt täglich um 6:00 Uhr die Prognose für heute und morgen an (standardmäßig AUS).",
-          "notify_learning": "Zeigt um 23:00 Uhr das Learning-Ergebnis mit Vorhergesagt vs. Tatsächlich (standardmäßig AUS).",
-          "notify_inverter": "Warnt, wenn der Inverter offline scheint (0W), max. 1x pro Tag (standardmäßig AUS).",
-          "notify_startup": "Zeigt eine Benachrichtigung beim erfolgreichen Start der Integration (standardmäßig AN)."
+          "weather_entity": "Wetter-Integration (DWD, Met.no, OpenWeather, etc.)",
+          "power_entity": "Sensor mit Tagesertrag in kWh (z.B. sensor.solar_ertrag_heute)",
+          "plant_kwp": "Spitzenleistung deiner Solaranlage (z.B. 2.13 für 2,13 kWp)",
+          "update_interval": "Aktualisierungsintervall in Sekunden (Standard: 3600 = 1 Stunde)",
+          "forecast_solar_sensor": "Forecast.Solar Integration zum Vergleich (Einheit: kWh)",
+          "current_power_sensor": "Aktuelle Solarleistung in W für Tagesprofil-Learning (z.B. sensor.wechselrichter_leistung)",
+          "lux_sensor": "Helligkeitssensor in Lux oder W/m² (z.B. sensor.aussenhelligkeit)",
+          "temp_sensor": "Außentemperatur-Sensor in °C (z.B. sensor.aussentemperatur)",
+          "wind_sensor": "Windgeschwindigkeit in km/h oder m/s (z.B. sensor.windgeschwindigkeit)",
+          "uv_sensor": "UV-Index-Sensor (Skala 0-11, z.B. sensor.uv_index)",
+          "inverter_power_sensor": "Wechselrichter Momentanleistung in W zur Offline-Erkennung",
+          "inverter_daily_yield": "Wechselrichter Tagesertrag in kWh zur Funktionsprüfung"
         }
       },
       "reconfigure": {
         "title": "Solar Forecast ML neu konfigurieren",
-        "description": "Ändere Sensoren und Einstellungen.\n\nDie Integration wird automatisch neu geladen.",
+        "description": "Ändere Sensoren und Einstellungen. Die Integration wird automatisch neu geladen.",
         "data": {
-          "weather_entity": "Wetter-Entität",
-          "power_entity": "Sensor für täglichen Solar-Ertrag (kWh)",
-          "plant_kwp": "Größe der Solaranlage in kWp (optional)",
-          "update_interval": "Update-Intervall in Sekunden",
-          "forecast_solar_sensor": "Weiterer Prognose-Sensor (optional)",
-          "lux_sensor": "Lux-Sensor (optional)",
-          "temp_sensor": "Temperatur-Sensor (optional)",
-          "wind_sensor": "Wind-Sensor (optional)",
-          "uv_sensor": "UV-Sensor (optional)",
-          "inverter_power_sensor": "Inverter-Power-Sensor (optional)",
-          "inverter_daily_yield": "Inverter-Tagesertrag (optional)"
+          "weather_entity": "Wetter-Entity",
+          "power_entity": "Tages-Solarertrag Sensor",
+          "plant_kwp": "Anlagenleistung (kWp)",
+          "update_interval": "Aktualisierungsintervall (Sekunden)",
+          "forecast_solar_sensor": "Forecast.Solar Sensor (optional)",
+          "current_power_sensor": "Aktuelle Leistung Sensor (optional)",
+          "lux_sensor": "Lux Sensor (optional)",
+          "temp_sensor": "Temperatur Sensor (optional)",
+          "wind_sensor": "Windgeschwindigkeit Sensor (optional)",
+          "uv_sensor": "UV-Index Sensor (optional)",
+          "inverter_power_sensor": "Wechselrichter Leistung Sensor (optional)",
+          "inverter_daily_yield": "Wechselrichter Tagesertrag Sensor (optional)"
         },
         "data_description": {
-          "weather_entity": "Die Wetter-Entität für Wettervorhersagen.",
-          "power_entity": "Der Sensor für den täglichen Solar-Ertrag (muss sich täglich zurücksetzen).",
-          "plant_kwp": "Größe deiner Solaranlage in kWp (z.B. 10.5).",
-          "update_interval": "Wie oft Sensordaten gesammelt werden (in Sekunden).",
-          "forecast_solar_sensor": "Optionaler Forecast.Solar Sensor zum Blenden.",
-          "lux_sensor": "Optionaler Illuminanz-Sensor.",
-          "temp_sensor": "Optionaler Temperatur-Sensor.",
-          "wind_sensor": "Optionaler Windgeschwindigkeit-Sensor.",
-          "uv_sensor": "Optionaler UV-Index-Sensor.",
-          "inverter_power_sensor": "Optionaler Inverter-Power-Sensor (aktueller Ertrag in W).",
-          "inverter_daily_yield": "Optionaler Inverter-Tagesertrag-Sensor (kWh)."
+          "weather_entity": "Wetter-Integration (DWD, Met.no, OpenWeather, etc.)",
+          "power_entity": "Sensor mit Tagesertrag in kWh",
+          "plant_kwp": "Spitzenleistung in kWp (z.B. 2.13)",
+          "update_interval": "Aktualisierungsintervall in Sekunden (Standard: 3600)",
+          "forecast_solar_sensor": "Forecast.Solar Sensor (Einheit: kWh)",
+          "current_power_sensor": "Aktuelle Solarleistung in W für Tagesprofil",
+          "lux_sensor": "Helligkeitssensor in Lux oder W/m²",
+          "temp_sensor": "Außentemperatur in °C",
+          "wind_sensor": "Windgeschwindigkeit in km/h oder m/s",
+          "uv_sensor": "UV-Index (Skala 0-11)",
+          "inverter_power_sensor": "Wechselrichter-Leistung in W",
+          "inverter_daily_yield": "Wechselrichter-Tagesertrag in kWh"
         }
       }
     },
-    "error": {
-      "cannot_connect": "Verbindung fehlgeschlagen",
-      "unknown": "Unbekannter Fehler"
-    },
     "abort": {
-      "already_configured": "Die Integration ist bereits konfiguriert.",
-      "reconfigure_successful": "Konfiguration erfolgreich aktualisiert! Die Integration wurde neu geladen."
+      "reconfigure_successful": "Neukonfiguration erfolgreich! Integration wird neu geladen."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Solar Forecast ML Optionen",
-        "description": "Aktiviere/Deaktiviere Features und Benachrichtigungen.\n\nTipp: Alle Benachrichtigungen sind standardmäßig AUS, um Spam zu vermeiden.",
+        "title": "Solar Forecast ML - Optionen",
+        "description": "Aktiviere/Deaktiviere Benachrichtigungen und Features.",
         "data": {
-          "enable_diagnostic": "Diagnostic-Status-Sensor",
-          "enable_hourly": "Nächste-Stunde-Prognose",
-          "notify_forecast": "Tägliche Prognose-Benachrichtigung",
-          "notify_learning": "Learning-Ergebnis-Benachrichtigung",
-          "notify_inverter": "Inverter-Offline-Warnung",
+          "enable_diagnostic": "Diagnose-Sensor aktivieren",
+          "enable_hourly": "Nächste-Stunde-Prognose aktivieren",
+          "notify_forecast": "Tägliche Prognose-Benachrichtigung (6:00 Uhr)",
+          "notify_learning": "Lern-Ergebnis-Benachrichtigung (23:00 Uhr)",
+          "notify_inverter": "Wechselrichter-Offline-Warnung",
           "notify_startup": "Start-Benachrichtigung"
         },
         "data_description": {
-          "enable_diagnostic": "Zeigt einen Status-Sensor mit Infos wie Läuft normal, letztes Update, Inverter-Status, etc.",
-          "enable_hourly": "Erstellt einen Sensor für die Prognose der nächsten Stunde (basierend auf stündlicher Wettervorhersage).",
-          "notify_forecast": "Benachrichtigung um 6:00 Uhr mit der Prognose für heute und morgen (inkl. Genauigkeit).",
-          "notify_learning": "Benachrichtigung um 23:00 Uhr mit dem Learning-Ergebnis: Vorhergesagt vs. Tatsächlich, Abweichung in Prozent.",
-          "notify_inverter": "Warnt dich, wenn der Inverter offline zu sein scheint (0W), max. 1x pro Tag.",
-          "notify_startup": "Zeigt eine Benachrichtigung beim erfolgreichen Start der Integration mit Basiskapazität."
+          "enable_diagnostic": "Zeigt Integrations-Status und letzte Aktualisierung",
+          "enable_hourly": "Erstellt Sensor für stündliche Solarprognose",
+          "notify_forecast": "Sendet tägliche Prognose-Benachrichtigung um 6:00 Uhr",
+          "notify_learning": "Zeigt Lernergebnisse nach Mitternachts-Analyse",
+          "notify_inverter": "Warnt wenn Wechselrichter offline erscheint",
+          "notify_startup": "Bestätigt erfolgreichen Start der Integration"
         }
       }
     }
   },
   "entity": {
     "sensor": {
-      "heute": {
+      "solar_forecast_ml_prognose_heute": {
         "name": "Prognose Heute"
       },
-      "morgen": {
+      "solar_forecast_ml_prognose_morgen": {
         "name": "Prognose Morgen"
       },
-      "genauigkeit": {
+      "solar_forecast_ml_prognose_genauigkeit": {
         "name": "Prognose Genauigkeit"
       },
-      "status": {
-        "name": "Status"
+      "solar_forecast_ml_status": {
+        "name": "System-Status"
       },
-      "naechste_stunde": {
+      "solar_forecast_ml_prognose_naechste_stunde": {
         "name": "Prognose Nächste Stunde"
       }
     },
     "button": {
-      "manual_forecast": {
+      "solar_forecast_ml_manual_forecast": {
         "name": "Manuelle Prognose"
       }
     }

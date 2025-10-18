@@ -1,4 +1,4 @@
-"""Solar Forecast ML Sensor Platform - Selbstlernend mit optionalen Sensoren."""
+"""Solar Forecast ML Sensor Platform - v3.0.0 FINAL mit allen Fixes."""
 import logging
 from datetime import timedelta, datetime, date
 import json
@@ -6,8 +6,7 @@ import os
 from typing import Dict
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
-from homeassistant.components.button import ButtonEntity  # ✅ FIX: Korrekter Import
-from homeassistant.const import UnitOfEnergy
+from homeassistant.const import UnitOfEnergy, SUN_EVENT_SUNRISE, SUN_EVENT_SUNSET
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.config_entries import ConfigEntry
@@ -16,6 +15,8 @@ from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
 )
 from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.sun import get_astral_event_date
+from homeassistant.util import dt as dt_util
 
 from .const import (
     DOMAIN,
@@ -32,8 +33,14 @@ from .const import (
     CONF_INVERTER_DAILY,
     CONF_DIAGNOSTIC,
     CONF_HOURLY,
+    CONF_CURRENT_POWER,
+    CONF_NOTIFY_FORECAST,
+    CONF_NOTIFY_LEARNING,
+    CONF_NOTIFY_INVERTER,
+    CONF_NOTIFY_STARTUP,
     WEIGHTS_FILE,
     HISTORY_FILE,
+    HOURLY_PROFILE_FILE,
     DEFAULT_BASE_CAPACITY,
     DEFAULT_KWP_TO_KWH_FACTOR,
     DEFAULT_INVERTER_THRESHOLD,
@@ -82,6 +89,38 @@ def _write_history_file(filepath, data):
     except Exception as e:
         _LOGGER.error(f"Fehler beim Speichern der History-Datei: {e}")
 
+# ✅ v2.3.0: Quick-Kalibrierung
+def calculate_initial_base_capacity(plant_kwp: float, location: str = "DE") -> float:
+    """
+    Intelligente Startwert-Berechnung basierend auf kWp und Standort.
+    
+    Formel: kWp × durchschnittliche Sonnenstunden × Systemeffizienz
+    """
+    if not plant_kwp or plant_kwp <= 0:
+        return DEFAULT_BASE_CAPACITY
+    
+    # Deutschland Durchschnitt: ~3.5 Sonnenstunden/Tag
+    avg_sun_hours = 3.5
+    
+    # Systemeffizienz: ~85% (Verluste durch Wetter, Ausrichtung, Verschattung, etc.)
+    system_efficiency = 0.85
+    
+    base_capacity = plant_kwp * avg_sun_hours * system_efficiency
+    
+    # Sicherheits-Clamp: Zwischen 2x und 5x kWp
+    min_capacity = plant_kwp * 2.0
+    max_capacity = plant_kwp * 5.0
+    
+    clamped_capacity = max(min_capacity, min(max_capacity, base_capacity))
+    
+    _LOGGER.info(
+        f"🏭 Quick-Kalibrierung: kWp={plant_kwp:.2f} → "
+        f"Base Capacity={clamped_capacity:.2f} kWh "
+        f"(Rohdaten: {base_capacity:.2f} kWh)"
+    )
+    
+    return clamped_capacity
+
 # -------------------------------------------------------------
 
 async def async_setup_entry(
@@ -91,26 +130,36 @@ async def async_setup_entry(
 ) -> None:
     """Set up Solar Forecast sensors."""
     config = entry.data
-    _LOGGER.info(f"Setting up Solar Forecast ML BETA 1.1 with config: {config}")
+    _LOGGER.info(f"Setting up Solar Forecast ML v3.0.0 with config: {config}")
+    
+    # ✅ v3.0.0 FIX: Erstelle Coordinator
     coordinator = SolarForecastCoordinator(hass, config)
+    
+    # ✅ v3.0.0 FIX: Speichere Coordinator SOFORT für button.py
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][f"{entry.entry_id}_coordinator"] = coordinator
+    
+    # Jetzt erst refresh
     await coordinator.async_config_entry_first_refresh()
+    
     entities = [
         SolarForecastSensor(coordinator, "heute", "Solar Forecast ML Prognose Heute"),
         SolarForecastSensor(coordinator, "morgen", "Solar Forecast ML Prognose Morgen"),
         SolarAccuracySensor(coordinator, "genauigkeit", "Solar Forecast ML Prognose Genauigkeit"),
     ]
-    # Neu: Diagnostic-Sensor, wenn enabled
+    
     if config.get(CONF_DIAGNOSTIC, True):
         entities.append(DiagnosticStatusSensor(coordinator, "status", "Solar Forecast ML Status"))
-    # Neu: Hourly-Sensor, wenn enabled
+    
     if config.get(CONF_HOURLY, False):
         entities.append(NextHourSensor(coordinator, "naechste_stunde", "Solar Forecast ML Prognose Nächste Stunde"))
-    # Neu: Manual Button
-    entities.append(ManualForecastButton(coordinator, "manual_forecast", "Solar Forecast ML Manuelle Prognose"))
+    
     async_add_entities(entities)
 
+
 class SolarForecastCoordinator(DataUpdateCoordinator):
-    """Selbstlernender Coordinator für Solar Forecast."""
+    """Selbstlernender Coordinator für Solar Forecast - v3.0.0 FINAL."""
+    
     def __init__(self, hass: HomeAssistant, config: Dict):
         """Initialize the coordinator."""
         super().__init__(
@@ -122,25 +171,36 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
 
         self.weather_entity = config[CONF_WEATHER_ENTITY]
         self.power_entity = config[CONF_POWER_ENTITY]
-
         self.fs_sensor = config.get(CONF_FORECAST_SOLAR)
+        
+        # v2.3.0: Neuer optionaler Sensor für Tagesprofil
+        self.current_power_sensor = config.get(CONF_CURRENT_POWER)
 
         self.lux_sensor = config.get(CONF_LUX_SENSOR)
         self.temp_sensor = config.get(CONF_TEMP_SENSOR)
         self.wind_sensor = config.get(CONF_WIND_SENSOR)
         self.uv_sensor = config.get(CONF_UV_SENSOR)
 
-        # Neu: Inverter-Sensoren
         self.inverter_power = config.get(CONF_INVERTER_POWER)
         self.inverter_daily = config.get(CONF_INVERTER_DAILY)
 
-        # Neu: Toggles
         self.enable_diagnostic = config.get(CONF_DIAGNOSTIC, True)
-        self.enable_hourly = config.get(CONF_HOURLY, False)  # ✅ FIX: Vervollständigt
+        self.enable_hourly = config.get(CONF_HOURLY, False)
+        
+        # v2.3.0: Notification Toggles
+        self.notify_forecast = config.get(CONF_NOTIFY_FORECAST, False)
+        self.notify_learning = config.get(CONF_NOTIFY_LEARNING, False)
+        self.notify_inverter = config.get(CONF_NOTIFY_INVERTER, False)
+        self.notify_startup = config.get(CONF_NOTIFY_STARTUP, True)
 
+        # ✅ v2.3.0: Quick-Kalibrierung mit kWp
         plant_kwp = config.get(CONF_PLANT_KWP)
-        self.base_capacity = plant_kwp * DEFAULT_KWP_TO_KWH_FACTOR if plant_kwp else DEFAULT_BASE_CAPACITY
-        _LOGGER.info(f"🏭 Base Capacity: {self.base_capacity:.2f} kWh (kWp: {plant_kwp or 'default'})")
+        if plant_kwp:
+            self.base_capacity = calculate_initial_base_capacity(plant_kwp)
+        else:
+            self.base_capacity = DEFAULT_BASE_CAPACITY
+        
+        _LOGGER.info(f"🏭 Base Capacity initialisiert: {self.base_capacity:.2f} kWh")
 
         self.weights = DEFAULT_WEIGHTS.copy()
         self.daily_predictions = {}
@@ -149,38 +209,173 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
         self.last_inverter_notification = None
         self.last_update = datetime.now()
         self.next_hour_pred = 0.0
+        
+        # v2.3.0: Tagesprofil-Daten
+        self.hourly_profile = {}
+        self.today_hourly_data = {}
+        self.last_hourly_collection = None
+        
+        # ✅ v2.3.0: Weather Auto-Detection
+        self.weather_type = self._detect_weather_type()
+        self.forecast_method = None  # Wird beim ersten Aufruf gesetzt
+        self.dwd_forecast_attr = None  # Für DWD-spezifische Attribute
 
-        self._load_weights()
+        # ✅ v2.3.0 FIX: Initialisiere data mit Defaults
+        self.data = {"heute": 0.0, "morgen": 0.0, "genauigkeit": 0.0}
+
+        # ✅ v3.0.0 FIX: Alle I/O-Operationen async machen
+        hass.async_create_task(self._async_load_weights())
         hass.async_create_task(self._load_history())
-        self._load_last_data()
+        hass.async_create_task(self._load_hourly_profile())
         
         hass.async_create_task(self._initial_setup()) 
 
         # Zeitplanung
         async_track_time_change(hass, self._morning_forecast, hour=6, minute=0, second=0)
         async_track_time_change(hass, self._midnight_learning, hour=23, minute=0, second=0)
+        
+        # v2.3.0: Stündliche Datensammlung wenn current_power verfügbar
+        if self.current_power_sensor:
+            async_track_time_change(hass, self._collect_hourly_data, minute=0, second=0)
+            _LOGGER.info("📊 Stündliche Datensammlung aktiviert")
 
-    def _get_status_text(self):
-        """Generiere Status-Text für Diagnostic-Sensor."""
-        now = datetime.now()
-        hours_since_forecast = (now - self.last_update).total_seconds() / 3600
-        next_learning = 23 - now.hour if now.hour < 23 else 23 + 24 - now.hour
-        inverter_status = "Online" if self.inverter_power else "Nicht konfiguriert"
-        if self.inverter_power:
-            power_state = self.hass.states.get(self.inverter_power)
-            if power_state and power_state.state not in ['unknown', 'unavailable']:
-                try:
-                    if float(power_state.state) > DEFAULT_INVERTER_THRESHOLD:
-                        inverter_status = "Online"
-                    else:
-                        inverter_status = "Offline (0W)"
-                except ValueError:
-                    inverter_status = "Offline (ungültig)"
-        status_emoji = "✅" if hours_since_forecast < 1 else "⚠️"
-        return f"{status_emoji} Läuft normal | Letzte Prognose: {hours_since_forecast:.1f}h her | Nächstes Learning: {next_learning}h | Inverter: {inverter_status} | Genauigkeit: {self.accuracy:.0f}%"
+    # ✅ v2.3.0: Weather-Typ Erkennung (DWD-First!)
+    def _detect_weather_type(self) -> str:
+        """Erkenne Weather-Integration - DWD wird bevorzugt!"""
+        entity_id = self.weather_entity.lower()
+        
+        # Priorität: DWD > Met.no > OpenWeather > Generic
+        if 'dwd' in entity_id or 'deutscher_wetterdienst' in entity_id:
+            _LOGGER.info("🌤️ Erkannt: DWD Weather (bevorzugt!)")
+            return 'dwd'
+        elif 'met' in entity_id or 'forecast_home' in entity_id:
+            _LOGGER.info("🌤️ Erkannt: Met.no Weather")
+            return 'met.no'
+        elif 'openweather' in entity_id:
+            _LOGGER.info("🌤️ Erkannt: OpenWeatherMap")
+            return 'openweathermap'
+        else:
+            _LOGGER.info("🌤️ Erkannt: Generische Weather-Integration")
+            return 'generic'
+
+    # ✅ v2.3.0: Auto-Detection der Forecast-Methode
+    async def _detect_forecast_method(self) -> str:
+        """Einmalige Auto-Detection der Forecast-Methode."""
+        
+        _LOGGER.info(f"🔍 Teste Forecast-Methoden für {self.weather_type}...")
+        
+        # Methode 1: Service (modern, bevorzugt)
+        try:
+            response = await self.hass.services.async_call(
+                "weather",
+                "get_forecasts",
+                {"type": "daily", "entity_id": self.weather_entity},
+                blocking=True,
+                return_response=True,
+            )
+            
+            forecast = response.get(self.weather_entity, {}).get("forecast")
+            if not forecast:
+                forecast = response.get("forecast")
+            
+            if forecast and len(forecast) > 0:
+                _LOGGER.info("✅ Weather-Methode: get_forecasts Service")
+                return "service"
+        except Exception as e:
+            _LOGGER.debug(f"Service-Methode fehlgeschlagen: {e}")
+        
+        # Methode 2: Attribut (legacy, Fallback)
+        try:
+            state = self.hass.states.get(self.weather_entity)
+            if state and 'forecast' in state.attributes:
+                forecast = state.attributes['forecast']
+                if forecast and len(forecast) > 0:
+                    _LOGGER.info("✅ Weather-Methode: forecast Attribut (Legacy)")
+                    return "attribute"
+        except Exception as e:
+            _LOGGER.debug(f"Attribut-Methode fehlgeschlagen: {e}")
+        
+        # Methode 3: DWD-Spezifisch (falls DWD erkannt)
+        if self.weather_type == 'dwd':
+            try:
+                state = self.hass.states.get(self.weather_entity)
+                if state:
+                    # DWD hat manchmal 'forecast_daily' statt 'forecast'
+                    for attr in ['forecast_daily', 'forecast_hourly', 'forecast']:
+                        if attr in state.attributes:
+                            forecast = state.attributes[attr]
+                            if forecast and len(forecast) > 0:
+                                _LOGGER.info(f"✅ Weather-Methode: DWD-{attr}")
+                                self.dwd_forecast_attr = attr
+                                return "dwd_attribute"
+            except Exception as e:
+                _LOGGER.debug(f"DWD-Methode fehlgeschlagen: {e}")
+        
+        _LOGGER.error("❌ Keine funktionierende Forecast-Methode gefunden!")
+        _LOGGER.error(f"⚠️ Bitte prüfe: {self.weather_entity} ist korrekt konfiguriert?")
+        return None
+
+# Fortsetzung von Teil 1...
+
+    # ✅ v2.3.0: Hole Forecast via Service
+    async def _get_forecast_via_service(self):
+        """Hole Forecast via Service."""
+        try:
+            response = await self.hass.services.async_call(
+                "weather",
+                "get_forecasts",
+                {"type": "daily", "entity_id": self.weather_entity},
+                blocking=True,
+                return_response=True,
+            )
+            
+            forecast = response.get(self.weather_entity, {}).get("forecast")
+            if not forecast:
+                forecast = response.get("forecast", [])
+            
+            return forecast
+        except Exception as e:
+            _LOGGER.error(f"Service-Forecast fehlgeschlagen: {e}")
+            # Fallback: Versuche Attribut-Methode
+            return await self._get_forecast_via_attribute()
+
+    # ✅ v2.3.0: Hole Forecast via Attribut
+    async def _get_forecast_via_attribute(self):
+        """Hole Forecast via Attribut."""
+        try:
+            state = self.hass.states.get(self.weather_entity)
+            if state and state.attributes:
+                # DWD-Spezifisch: Prüfe verschiedene Attribute
+                if self.weather_type == 'dwd' and self.dwd_forecast_attr:
+                    return state.attributes.get(self.dwd_forecast_attr, [])
+                
+                return state.attributes.get('forecast', [])
+            return []
+        except Exception as e:
+            _LOGGER.error(f"Attribut-Forecast fehlgeschlagen: {e}")
+            return []
+
+    # ✅ v2.3.0: Hauptmethode für Weather Forecast (mit Auto-Detection)
+    async def _get_weather_forecast(self):
+        """Hole Wettervorhersage mit Auto-Detection."""
+        
+        # Beim ersten Aufruf: Erkenne Methode
+        if self.forecast_method is None:
+            self.forecast_method = await self._detect_forecast_method()
+        
+        # Nutze erkannte Methode
+        if self.forecast_method == "service":
+            return await self._get_forecast_via_service()
+        elif self.forecast_method == "attribute":
+            return await self._get_forecast_via_attribute()
+        elif self.forecast_method == "dwd_attribute":
+            return await self._get_forecast_via_attribute()
+        else:
+            _LOGGER.error("❌ Keine Weather-Forecast-Methode verfügbar!")
+            return []
 
     async def _get_next_hour_forecast(self):
-        """Hole stündliche Wettervorhersage für nächste Stunde."""
+        """Hole stündliche Wettervorhersage mit Fallback."""
         try:
             response = await self.hass.services.async_call(
                 "weather",
@@ -192,13 +387,198 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
             forecast = response.get(self.weather_entity, {}).get("forecast", [])
             return forecast[0] if forecast else None
         except Exception as e:
-            _LOGGER.error(f"Fehler beim Abrufen der stündlichen Wettervorhersage: {e}")
+            _LOGGER.warning(f"Stündliche Vorhersage fehlgeschlagen: {e}")
+            
+            # Fallback: Nutze daily forecast
+            try:
+                daily_forecast = await self._get_weather_forecast()
+                if daily_forecast:
+                    _LOGGER.info("⚠️ Nutze Tages- statt Stundenvorhersage")
+                    return daily_forecast[0]
+            except:
+                pass
+            
             return None
+
+    # v2.3.0: Nacht-Check
+    def _is_night_time(self) -> bool:
+        """Prüfe ob es aktuell Nacht ist (Sonnenauf-/untergang)."""
+        try:
+            now = dt_util.now()
+            today = now.date()
+            
+            sunrise = get_astral_event_date(self.hass, SUN_EVENT_SUNRISE, today)
+            sunset = get_astral_event_date(self.hass, SUN_EVENT_SUNSET, today)
+            
+            if sunrise is None or sunset is None:
+                # Fallback: Einfache Zeit-Prüfung
+                hour = now.hour
+                return hour < 6 or hour >= 21
+            
+            is_night = now < sunrise or now > sunset
+            return is_night
+            
+        except Exception as e:
+            _LOGGER.warning(f"Fehler bei Nacht-Prüfung: {e}, nutze Fallback")
+            hour = datetime.now().hour
+            return hour < 6 or hour >= 21
+
+    # v2.3.0: Stündliche Datensammlung
+    async def _collect_hourly_data(self, now):
+        """Sammle stündliche current_power Daten für Tagesprofil-Learning."""
+        if not self.current_power_sensor:
+            return
+        
+        try:
+            hour = now.hour
+            
+            if self.last_hourly_collection == hour:
+                return
+            
+            state = self.hass.states.get(self.current_power_sensor)
+            if not state or state.state in ['unknown', 'unavailable']:
+                _LOGGER.debug(f"⏰ Stunde {hour}: Keine Daten von current_power verfügbar")
+                return
+            
+            try:
+                power_w = float(state.state)
+                kwh = power_w / 1000.0
+                
+                self.today_hourly_data[hour] = kwh
+                self.last_hourly_collection = hour
+                
+                _LOGGER.info(f"📊 Stunde {hour}: {kwh:.3f} kWh gesammelt")
+                
+            except ValueError:
+                _LOGGER.warning(f"Ungültiger current_power Wert: {state.state}")
+                
+        except Exception as e:
+            _LOGGER.error(f"Fehler bei stündlicher Datensammlung: {e}", exc_info=True)
+
+    # ✅ v2.3.0 FIX: Lade Hourly Profile mit Initialisierung
+    async def _load_hourly_profile(self):
+        """Lade gespeichertes Tagesprofil."""
+        try:
+            profile_data = await self.hass.async_add_executor_job(
+                _read_history_file, HOURLY_PROFILE_FILE
+            )
+            if profile_data:
+                self.hourly_profile = profile_data
+                _LOGGER.info(f"📈 Tagesprofil geladen: {len(self.hourly_profile)} Stunden")
+            else:
+                # ✅ FIX: Erstelle leere Datei
+                _LOGGER.info("📝 Erstelle initiale hourly_profile.json")
+                self._save_hourly_profile()
+        except Exception as e:
+            _LOGGER.warning(f"Konnte Tagesprofil nicht laden: {e}")
+            # ✅ FIX: Bei Fehler trotzdem initialisieren
+            self._save_hourly_profile()
+
+    def _save_hourly_profile(self):
+        """Speichere Tagesprofil."""
+        try:
+            self.hass.async_add_executor_job(
+                _write_history_file, HOURLY_PROFILE_FILE, self.hourly_profile
+            )
+            _LOGGER.info("📈 Tagesprofil gespeichert")
+        except Exception as e:
+            _LOGGER.error(f"Fehler beim Speichern des Tagesprofils: {e}")
+
+    def _calculate_hourly_profile(self):
+        """Berechne typisches Tagesprofil aus letzten 30 Tagen."""
+        try:
+            if not self.daily_predictions:
+                _LOGGER.debug("Keine Historie für Tagesprofil-Berechnung")
+                return
+            
+            recent_days = list(self.daily_predictions.items())[-30:]
+            hourly_patterns = {}
+            
+            for date_str, day_data in recent_days:
+                if not isinstance(day_data, dict):
+                    continue
+                
+                hourly_data = day_data.get('hourly_data', {})
+                daily_total = day_data.get('actual', 0)
+                
+                if daily_total < 0.5:
+                    continue
+                
+                for hour_str, kwh in hourly_data.items():
+                    try:
+                        hour = int(hour_str)
+                        if kwh > 0:
+                            percentage = (kwh / daily_total) * 100.0
+                            
+                            if hour not in hourly_patterns:
+                                hourly_patterns[hour] = []
+                            
+                            hourly_patterns[hour].append(percentage)
+                    except (ValueError, TypeError):
+                        continue
+            
+            new_profile = {}
+            for hour, percentages in hourly_patterns.items():
+                if len(percentages) >= 3:
+                    import statistics
+                    new_profile[hour] = {
+                        'mean': statistics.mean(percentages),
+                        'std': statistics.stdev(percentages) if len(percentages) > 1 else 0,
+                        'count': len(percentages),
+                        'min': min(percentages),
+                        'max': max(percentages)
+                    }
+            
+            if new_profile:
+                self.hourly_profile = new_profile
+                self._save_hourly_profile()
+                _LOGGER.info(
+                    f"📈 Tagesprofil aktualisiert: {len(new_profile)} Stunden, "
+                    f"basierend auf {len([d for d in recent_days if isinstance(d[1], dict) and d[1].get('actual', 0) > 0.5])} Tagen"
+                )
+                
+        except Exception as e:
+            _LOGGER.error(f"Fehler bei Tagesprofil-Berechnung: {e}", exc_info=True)
+
+    def _get_status_text(self):
+        """Generiere Status-Text für Diagnostic-Sensor."""
+        now = datetime.now()
+        hours_since_forecast = (now - self.last_update).total_seconds() / 3600
+        next_learning = 23 - now.hour if now.hour < 23 else 23 + 24 - now.hour
+        inverter_status = "Online" if self.inverter_power else "Nicht konfiguriert"
+        
+        if self.inverter_power:
+            power_state = self.hass.states.get(self.inverter_power)
+            if power_state and power_state.state not in ['unknown', 'unavailable']:
+                try:
+                    if float(power_state.state) > DEFAULT_INVERTER_THRESHOLD:
+                        inverter_status = "Online"
+                    else:
+                        inverter_status = "Offline (0W)"
+                except ValueError:
+                    inverter_status = "Offline (ungültig)"
+        
+        profile_status = "Nicht verfügbar"
+        if self.hourly_profile:
+            profile_status = f"{len(self.hourly_profile)} Stunden gelernt"
+        
+        status_emoji = "✅" if hours_since_forecast < 1 else "⚠️"
+        return (
+            f"{status_emoji} Läuft normal | Letzte Prognose: {hours_since_forecast:.1f}h her | "
+            f"Nächstes Learning: {next_learning}h | Inverter: {inverter_status} | "
+            f"Genauigkeit: {self.accuracy:.0f}% | Tagesprofil: {profile_status}"
+        )
 
     async def _predict_next_hour(self):
         """Berechne Prognose für nächste Stunde."""
         if not self.enable_hourly:
             return 0.0
+        
+        # Nacht-Fix
+        if self._is_night_time():
+            self.next_hour_pred = 0.0
+            return 0.0
+        
         try:
             hour_forecast = await self._get_next_hour_forecast()
             if not hour_forecast:
@@ -214,11 +594,16 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
 
     def _predict_hour(self, forecast: Dict, sensor_data: Dict) -> float:
         """Erstelle stündliche Prognose."""
-        LUX_MAX_NORM = 100000.0 
+        LUX_MAX_NORM = 100000.0
+        
+        if self._is_night_time():
+            return 0.0
+        
         try:
             condition = forecast.get('condition', 'cloudy')
             if condition in ['clear-night', 'night']:
                 return 0.0
+            
             cloud_coverage = forecast.get('cloud_coverage', 50)
             precipitation = forecast.get('precipitation', 0)
             
@@ -240,7 +625,7 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                     sensor_value = sensor_data[sensor_type]
                     if sensor_type == 'lux':
                         norm_value = sensor_value / LUX_MAX_NORM
-                        prediction_ml += norm_value * self.weights['lux'] * (self.base_capacity / 10) * 0.1 
+                        prediction_ml += norm_value * self.weights['lux'] * (self.base_capacity / 10) * 0.1
                     else:
                         prediction_ml += sensor_value * self.weights[sensor_type] / 10
 
@@ -252,29 +637,42 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
             _LOGGER.error(f"Fehler bei stündlicher Prognose: {e}")
             return 0.0
 
-    def _load_weights(self):
-        """Lade gelernte Gewichte aus Datei."""
+    # ✅ v3.0.0 FIX: Async Weights Loading
+    async def _async_load_weights(self):
+        """Lade gelernte Gewichte aus Datei - ASYNC."""
         try:
-            if os.path.exists(WEIGHTS_FILE):
-                with open(WEIGHTS_FILE, 'r') as f:
-                    saved_weights = json.load(f)
-                    self.weights.update(saved_weights)
-                    self.base_capacity = saved_weights.get('base_capacity', self.base_capacity)
-                    _LOGGER.info(f"💾 Gewichte geladen: {self.weights}")
+            saved_weights = await self.hass.async_add_executor_job(
+                _read_history_file, WEIGHTS_FILE
+            )
+            if saved_weights:
+                self.weights.update(saved_weights)
+                self.base_capacity = saved_weights.get('base_capacity', self.base_capacity)
+                _LOGGER.info(f"💾 Gewichte geladen: {self.weights}")
+            else:
+                # Erstelle initiale Datei
+                _LOGGER.info("📝 Erstelle initiale weights.json")
+                await self._async_save_weights()
         except Exception as e:
             _LOGGER.warning(f"Konnte Gewichte nicht laden: {e}")
+            # Bei Fehler trotzdem initialisieren
+            await self._async_save_weights()
 
-    def _save_weights(self):
-        """Speichere gelernte Gewichte."""
+    async def _async_save_weights(self):
+        """Speichere gelernte Gewichte - ASYNC."""
         try:
             save_data = self.weights.copy()
             save_data['base_capacity'] = self.base_capacity
-            os.makedirs(os.path.dirname(WEIGHTS_FILE), exist_ok=True)
-            with open(WEIGHTS_FILE, 'w') as f:
-                json.dump(save_data, f, indent=2)
-            _LOGGER.info(f"💾 Gewichte gespeichert")
+            await self.hass.async_add_executor_job(
+                _write_history_file, WEIGHTS_FILE, save_data
+            )
+            _LOGGER.info("💾 Gewichte gespeichert")
         except Exception as e:
             _LOGGER.error(f"Fehler beim Speichern der Gewichte: {e}")
+
+    # Behalte synchrone Version für Callbacks (wird aber nicht im __init__ aufgerufen)
+    def _save_weights(self):
+        """Speichere gelernte Gewichte - SYNC Wrapper."""
+        self.hass.async_create_task(self._async_save_weights())
 
     async def _load_history(self):
         """Lade Vorhersage-Historie asynchron."""
@@ -291,7 +689,7 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
         """Speichere Vorhersage-Historie asynchron."""
         try:
             self.hass.async_add_executor_job(_write_history_file, HISTORY_FILE, self.daily_predictions)
-            _LOGGER.info("📁 Historie gespeichert")
+            _LOGGER.info("💾 Historie gespeichert")
         except Exception as e:
             _LOGGER.error(f"Fehler beim Speichern der Historie: {e}")
 
@@ -311,15 +709,21 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                         "genauigkeit": round(self.accuracy, 1),
                     }
                     _LOGGER.info(f"💾 Letzter Wert geladen: Heute {self.data['heute']:.2f} kWh")
-                else:
-                    _LOGGER.debug("Keine History für Last-State – starte mit Defaults")
         except Exception as e:
             _LOGGER.warning(f"Last-State-Laden fehlgeschlagen: {e}")
 
     async def _initial_setup(self):
         """Initialer Setup."""
+        # Warte kurz bis async Loading fertig ist
+        await self.hass.async_add_executor_job(lambda: None)  # Yield to event loop
+        
+        # Jetzt können wir _load_last_data() aufrufen (braucht History)
+        self._load_last_data()
+        
         self._calibrate_base_capacity()
-        await self._notify_start_success()
+        
+        if self.notify_startup:
+            await self._notify_start_success()
 
     async def _notify_start_success(self):
         """Benachrichtigung über erfolgreichen Start."""
@@ -328,10 +732,11 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                 "persistent_notification",
                 "create",
                 {
-                    "title": "✅ SolarForecastML erfolgreich gestartet",
+                    "title": "✅ SolarForecastML v3.0.0 erfolgreich gestartet",
                     "message": (
                         f"• Basiskapazität: {self.base_capacity:.2f} kWh\n"
-                        f"• Das Modell lernt jetzt täglich (23:00 Uhr) und erstellt Prognosen."
+                        f"• Weather-Typ: {self.weather_type}\n"
+                        f"• Das Modell lernt täglich (23:00 Uhr) und erstellt Prognosen."
                     ),
                     "notification_id": "solar_forecast_ml_start_success"
                 }
@@ -342,8 +747,12 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
 
     async def _notify_inverter_offline(self):
         """Benachrichtigung bei Inverter-Ausfall."""
+        if not self.notify_inverter:
+            return
+        
         if self.last_inverter_notification == date.today().isoformat():
             return
+        
         try:
             await self.hass.services.async_call(
                 "persistent_notification",
@@ -376,15 +785,24 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
 
     async def _morning_forecast(self, now):
         """Erstelle Prognose um 6:00 Uhr."""
-        _LOGGER.info("🔆 Berechne Tagesprognose um 6:00 Uhr...")
+        _LOGGER.info("🌆 Berechne Tagesprognose um 6:00 Uhr...")
         await self._create_forecast()
 
     async def _midnight_learning(self, now):
         """Lerne um 23:00 Uhr."""
-        _LOGGER.info("🌒 Starte Lernprozess um 23:00 Uhr...")
+        _LOGGER.info("🌑 Starte Lernprozess um 23:00 Uhr...")
         try:
             today = date.today().isoformat()
             actual_power = self.hass.states.get(self.power_entity)
+            
+            # Speichere hourly_data in Historie
+            if self.today_hourly_data:
+                if today not in self.daily_predictions:
+                    self.daily_predictions[today] = {}
+                self.daily_predictions[today]['hourly_data'] = self.today_hourly_data.copy()
+                _LOGGER.info(f"📊 Stündliche Daten für {today} gespeichert: {len(self.today_hourly_data)} Stunden")
+                self.today_hourly_data = {}
+                self.last_hourly_collection = None
             
             if actual_power and actual_power.state not in ['unknown', 'unavailable']:
                 try:
@@ -429,8 +847,46 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                     self._calculate_accuracy()
                     self._calibrate_base_capacity()
                     
+                    if self.notify_learning:
+                        await self._notify_learning_result(yesterday, predicted, actual, error_percent)
+            
+            # Berechne Tagesprofil
+            if self.current_power_sensor:
+                self._calculate_hourly_profile()
+                    
         except Exception as e:
             _LOGGER.error(f"Fehler beim Midnight Learning: {e}", exc_info=True)
+
+    async def _notify_learning_result(self, date_str: str, predicted: float, actual: float, error_percent: float):
+        """Benachrichtigung über Learning-Ergebnis."""
+        try:
+            if abs(error_percent) < 10:
+                emoji = "✅"
+                status = "Sehr gut"
+            elif abs(error_percent) < 20:
+                emoji = "⚠️"
+                status = "Akzeptabel"
+            else:
+                emoji = "❌"
+                status = "Hohe Abweichung"
+            
+            await self.hass.services.async_call(
+                "persistent_notification",
+                "create",
+                {
+                    "title": f"{emoji} Learning-Ergebnis {date_str}",
+                    "message": (
+                        f"Status: {status}\n"
+                        f"• Prognose: {predicted:.2f} kWh\n"
+                        f"• Tatsächlich: {actual:.2f} kWh\n"
+                        f"• Abweichung: {error_percent:.1f}%\n"
+                        f"• Genauigkeit: {self.accuracy:.1f}%"
+                    ),
+                    "notification_id": "solar_forecast_ml_learning"
+                }
+            )
+        except Exception as e:
+            _LOGGER.warning(f"Learning-Benachrichtigung fehlgeschlagen: {e}")
 
     def _calculate_accuracy(self):
         """Berechne Modell-Genauigkeit."""
@@ -462,13 +918,25 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
             heute_kwh = self._predict_day(forecast_data[0], sensor_data, is_today=True)
             morgen_kwh = self._predict_day(forecast_data[1], sensor_data, is_today=False)
             
+            # Intelligenter Nacht-Fix: Nur bei tiefer Nacht (vor 5 Uhr oder nach 21 Uhr)
+            if self._is_night_time() and (now.hour < 5 or now.hour >= 21):
+                heute_kwh = 0.0
+            
             today = date.today().isoformat()
+            
+            # JSON-Erweiterung
             self.daily_predictions[today] = {
                 'predicted': heute_kwh,
                 'predicted_morgen': morgen_kwh,
                 'features': sensor_data,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now().isoformat(),
+                'weather_condition': forecast_data[0].get('condition', 'unknown'),
+                'cloud_coverage': forecast_data[0].get('cloud_coverage'),
+                'temperature': forecast_data[0].get('temperature'),
             }
+            
+            if self.today_hourly_data:
+                self.daily_predictions[today]['hourly_data'] = self.today_hourly_data.copy()
             
             self._save_history()
             self.last_forecast_date = date.today()
@@ -479,7 +947,9 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                 "genauigkeit": round(self.accuracy, 1),
             })
             
-            await self._notify_forecast(heute_kwh, morgen_kwh, self.accuracy)
+            if self.notify_forecast:
+                await self._notify_forecast(heute_kwh, morgen_kwh, self.accuracy)
+            
             _LOGGER.info(f"☀️ Prognose - Heute: {heute_kwh:.2f} kWh, Morgen: {morgen_kwh:.2f} kWh")
             
         except Exception as e:
@@ -514,21 +984,6 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
             if not self.data:
                 self._load_last_data()
             return self.data or {"heute": 0, "morgen": 0, "genauigkeit": self.accuracy}
-
-    async def _get_weather_forecast(self):
-        """Hole Wettervorhersage."""
-        try:
-            response = await self.hass.services.async_call(
-                "weather",
-                "get_forecasts",
-                {"type": "daily", "entity_id": self.weather_entity},
-                blocking=True,
-                return_response=True,
-            )
-            return response.get(self.weather_entity, {}).get("forecast", [])
-        except Exception as e:
-            _LOGGER.error(f"Fehler beim Abrufen der Wettervorhersage: {e}")
-            return []
 
     async def _get_sensor_data(self) -> Dict[str, float]:
         """Hole Daten von optionalen Sensoren."""
@@ -586,7 +1041,10 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
 
     def _predict_day(self, forecast: Dict, sensor_data: Dict, is_today: bool) -> float:
         """Erstelle Prognose mit gelernten Gewichten."""
-        LUX_MAX_NORM = 100000.0 
+        LUX_MAX_NORM = 100000.0
+        
+        if self._is_night_time() and is_today:
+            return 0.0
         
         try:
             condition = forecast.get('condition', 'cloudy')
@@ -608,7 +1066,7 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                     
                     if sensor_type == 'lux':
                         norm_value = sensor_value / LUX_MAX_NORM
-                        prediction_ml += norm_value * self.weights['lux'] * self.base_capacity * 0.1 
+                        prediction_ml += norm_value * self.weights['lux'] * self.base_capacity * 0.1
                     else:
                         prediction_ml += sensor_value * self.weights[sensor_type]
             
@@ -686,11 +1144,18 @@ class DiagnosticStatusSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self):
-        return {
+        attrs = {
             "last_update": self.coordinator.last_update.isoformat(),
             "next_learning": "23:00",
             "accuracy": self.coordinator.accuracy,
+            "weather_type": self.coordinator.weather_type,
+            "forecast_method": self.coordinator.forecast_method or "detecting...",
         }
+        
+        if self.coordinator.hourly_profile:
+            attrs["hourly_profile_hours"] = len(self.coordinator.hourly_profile)
+        
+        return attrs
 
 
 class SolarForecastSensor(CoordinatorEntity, SensorEntity):
@@ -706,7 +1171,10 @@ class SolarForecastSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        return self.coordinator.data.get(self._day_key)
+        if self.coordinator.data is None:
+            _LOGGER.warning(f"⚠️ coordinator.data ist None für {self._day_key}")
+            return 0.0
+        return self.coordinator.data.get(self._day_key, 0.0)
 
 
 class SolarAccuracySensor(CoordinatorEntity, SensorEntity):
@@ -722,37 +1190,6 @@ class SolarAccuracySensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
+        if self.coordinator.data is None:
+            return 0.0
         return round(self.coordinator.data.get(self._key, 0.0), 2)
-
-
-# ✅ FIX: Fehlende ManualForecastButton Klasse
-class ManualForecastButton(CoordinatorEntity, ButtonEntity):
-    """Button zum manuellen Triggern der Prognose."""
-    
-    def __init__(self, coordinator, key, name):
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{DOMAIN}_{key}"
-        self._attr_name = name
-        self._key = key
-        self._attr_icon = "mdi:refresh"
-        self._attr_device_class = "restart"
-
-    async def async_press(self):
-        """Handle button press - trigger forecast."""
-        _LOGGER.info("🔄 Manuelle Prognose durch Button ausgelöst")
-        try:
-            await self.coordinator._create_forecast()
-            await self.hass.services.async_call(
-                "persistent_notification",
-                "create",
-                {
-                    "title": "✅ Prognose manuell erstellt",
-                    "message": (
-                        f"Heute: {self.coordinator.data.get('heute', 0):.2f} kWh\n"
-                        f"Morgen: {self.coordinator.data.get('morgen', 0):.2f} kWh"
-                    ),
-                    "notification_id": "solar_forecast_ml_manual"
-                }
-            )
-        except Exception as e:
-            _LOGGER.error(f"Fehler beim manuellen Forecast: {e}", exc_info=True)
