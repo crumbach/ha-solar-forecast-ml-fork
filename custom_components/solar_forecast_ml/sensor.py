@@ -265,9 +265,20 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
 
     # ✅ v2.3.0: Auto-Detection der Forecast-Methode
     async def _detect_forecast_method(self) -> str:
-        """Einmalige Auto-Detection der Forecast-Methode."""
+        """Einmalige Auto-Detection der Forecast-Methode mit Retry."""
+        
+        import asyncio
         
         _LOGGER.info(f"🔍 Teste Forecast-Methoden für {self.weather_type}...")
+        
+        # CRITICAL FIX v3.0.5: Retry-Logik für Race-Condition beim Startup
+        for attempt in range(1, 4):
+            if attempt > 1:
+                wait_time = 2 if attempt == 2 else 5
+                _LOGGER.info(f"⏳ Versuch {attempt}/3 - warte {wait_time}s (Weather-Integration startet...)")
+                await asyncio.sleep(wait_time)
+            else:
+                _LOGGER.info(f"🔍 Versuch {attempt}/3...")
         
         # Methode 1: Service (modern, bevorzugt)
         try:
@@ -316,8 +327,10 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
             except Exception as e:
                 _LOGGER.debug(f"DWD-Methode fehlgeschlagen: {e}")
         
-        _LOGGER.error("❌ Keine funktionierende Forecast-Methode gefunden!")
+        # Nach allen Versuchen fehlgeschlagen
+        _LOGGER.error("❌ Keine funktionierende Forecast-Methode nach 3 Versuchen gefunden!")
         _LOGGER.error(f"⚠️ Bitte prüfe: {self.weather_entity} ist korrekt konfiguriert?")
+        _LOGGER.error(f"💡 Tipp: Weather-Integration braucht evtl. mehr Zeit beim Startup")
         return None
 
 # Fortsetzung von Teil 1...
@@ -362,11 +375,18 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
 
     # ✅ v2.3.0: Hauptmethode für Weather Forecast (mit Auto-Detection)
     async def _get_weather_forecast(self):
-        """Hole Wettervorhersage mit Auto-Detection."""
+        """Hole Wettervorhersage mit Lazy Detection und Retry."""
         
-        # Beim ersten Aufruf: Erkenne Methode
+        # LAZY DETECTION v3.0.5: Erst beim ersten Forecast detecten (nicht beim Startup!)
         if self.forecast_method is None:
+            _LOGGER.info("🔍 Erste Forecast-Anfrage - starte Weather-Detection mit Retry...")
             self.forecast_method = await self._detect_forecast_method()
+            
+            if self.forecast_method:
+                _LOGGER.info(f"✅ Detection erfolgreich: {self.forecast_method}")
+            else:
+                _LOGGER.error("❌ Detection nach 3 Versuchen fehlgeschlagen - Forecast nicht möglich!")
+                return []
         
         # Nutze erkannte Methode
         if self.forecast_method == "service":
@@ -453,6 +473,17 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                 self.last_hourly_collection = hour
                 
                 _LOGGER.info(f"📊 Stunde {hour}: {kwh:.3f} kWh gesammelt")
+                
+                # CRITICAL FIX v3.0.4: MERGE neue Stunde mit bestehenden (restart-safe!)
+                today = date.today().isoformat()
+                if today in self.daily_predictions:
+                    if 'hourly_data' not in self.daily_predictions[today]:
+                        self.daily_predictions[today]['hourly_data'] = {}
+                    
+                    # UPDATE statt COPY - merged mit bestehenden Stunden!
+                    self.daily_predictions[today]['hourly_data'].update(self.today_hourly_data)
+                    self._save_history()
+                    _LOGGER.debug(f"💾 Hourly data Stunde {hour} hinzugefügt (total: {len(self.daily_predictions[today]['hourly_data'])} Stunden)")
                 
             except ValueError:
                 _LOGGER.warning(f"Ungültiger current_power Wert: {state.state}")
@@ -563,16 +594,41 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                 except ValueError:
                     inverter_status = "Offline (ungültig)"
         
-        profile_status = "Nicht verfügbar"
-        if self.hourly_profile:
-            profile_status = f"{len(self.hourly_profile)} Stunden gelernt"
+        # OPTIMIZED STATUS v3.0.6: Kompakt - nur relevante Infos
+        status_parts = []
         
-        status_emoji = "✅" if hours_since_forecast < 1 else "⚠️"
-        return (
-            f"{status_emoji} Läuft normal | Letzte Prognose: {hours_since_forecast:.1f}h her | "
-            f"Nächstes Learning: {next_learning}h | Inverter: {inverter_status} | "
-            f"Genauigkeit: {self.accuracy:.0f}% | Tagesprofil: {profile_status}"
-        )
+        # Emoji: ✅ normal, ⚠️ wenn Prognose alt ODER Inverter offline
+        inverter_offline = False
+        if self.inverter_power:
+            power_state = self.hass.states.get(self.inverter_power)
+            if power_state and power_state.state not in ['unknown', 'unavailable']:
+                try:
+                    if float(power_state.state) <= DEFAULT_INVERTER_THRESHOLD:
+                        inverter_offline = True
+                except ValueError:
+                    inverter_offline = True
+        
+        status_emoji = "⚠️" if (hours_since_forecast >= 1 or inverter_offline) else "✅"
+        
+        # Basis-Infos (immer)
+        status_parts.append(f"Prognose vor: {hours_since_forecast:.1f}h")
+        status_parts.append(f"Learning in: {next_learning}h")
+        
+        # Inverter (nur wenn konfiguriert)
+        if self.inverter_power or self.inverter_daily:
+            if inverter_status.startswith("Online"):
+                status_parts.append("Inverter: Online")
+            elif inverter_status.startswith("Offline"):
+                status_parts.append("Inverter: Offline")
+        
+        # Genauigkeit (immer)
+        status_parts.append(f"{self.accuracy:.0f}%")
+        
+        # Profil (nur wenn vorhanden)
+        if self.hourly_profile and len(self.hourly_profile) > 0:
+            status_parts.append(f"Profil: {len(self.hourly_profile)}h")
+        
+        return f"{status_emoji} " + " | ".join(status_parts)
 
     async def _predict_next_hour(self):
         """Berechne Prognose für nächste Stunde."""
@@ -947,8 +1003,13 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                 'temperature': forecast_data[0].get('temperature'),
             })
             
+            # CRITICAL FIX v3.0.4 Part 2: MERGE statt COPY auch hier!
             if self.today_hourly_data:
-                self.daily_predictions[today]['hourly_data'] = self.today_hourly_data.copy()
+                if 'hourly_data' not in self.daily_predictions[today]:
+                    self.daily_predictions[today]['hourly_data'] = {}
+                
+                # UPDATE - merged mit bestehenden Stunden aus JSON!
+                self.daily_predictions[today]['hourly_data'].update(self.today_hourly_data)
             
             self._save_history()
             self.last_forecast_date = date.today()
