@@ -89,6 +89,48 @@ def _write_history_file(filepath, data):
     except Exception as e:
         _LOGGER.error(f"Fehler beim Speichern der History-Datei: {e}")
 
+def _migrate_data_files():
+    """v3.0.8: Migriere JSON-Dateien zu sicherem Speicherort (einmalig, automatisch)."""
+    from .const import (
+        DATA_DIR,
+        OLD_WEIGHTS_FILE, WEIGHTS_FILE,
+        OLD_HISTORY_FILE, HISTORY_FILE,
+        OLD_HOURLY_PROFILE_FILE, HOURLY_PROFILE_FILE
+    )
+    
+    # Erstelle neues Data-Verzeichnis
+    os.makedirs(DATA_DIR, exist_ok=True)
+    _LOGGER.debug(f"📁 Data directory: {DATA_DIR}")
+    
+    # Migration mapping: (old_path, new_path, filename)
+    migrations = [
+        (OLD_HISTORY_FILE, HISTORY_FILE, "prediction_history.json"),
+        (OLD_WEIGHTS_FILE, WEIGHTS_FILE, "learned_weights.json"),
+        (OLD_HOURLY_PROFILE_FILE, HOURLY_PROFILE_FILE, "hourly_profile.json"),
+    ]
+    
+    migrated_count = 0
+    for old_path, new_path, filename in migrations:
+        # Nur migrieren wenn alte Datei existiert UND neue nicht
+        if os.path.exists(old_path) and not os.path.exists(new_path):
+            try:
+                shutil.copy2(old_path, new_path)
+                _LOGGER.info(f"✅ Migrated {filename} to safe location")
+                migrated_count += 1
+            except Exception as e:
+                _LOGGER.error(f"❌ Failed to migrate {filename}: {e}")
+        
+        # Cleanup: Lösche alte Datei wenn beide existieren (bereits migriert)
+        elif os.path.exists(old_path) and os.path.exists(new_path):
+            try:
+                os.remove(old_path)
+                _LOGGER.debug(f"🗑️ Removed old {filename}")
+            except Exception as e:
+                _LOGGER.warning(f"Could not remove old {filename}: {e}")
+    
+    if migrated_count > 0:
+        _LOGGER.info(f"🎉 Data migration completed! {migrated_count} files moved to safe location.")
+
 # ✅ v2.3.0: Quick-Kalibrierung
 def calculate_initial_base_capacity(plant_kwp: float, location: str = "DE") -> float:
     """
@@ -138,6 +180,9 @@ async def async_setup_entry(
     # ✅ v3.0.0 FIX: Speichere Coordinator SOFORT für button.py
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][f"{entry.entry_id}_coordinator"] = coordinator
+    
+    # 🔒 v3.0.8: Migriere Daten zu sicherem Speicherort (einmalig, automatisch)
+    await hass.async_add_executor_job(_migrate_data_files)
     
     # 🔧 FIX v3.0.1: Lade Last-Data VOR dem ersten Refresh
     await coordinator._load_history()

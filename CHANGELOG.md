@@ -2,100 +2,61 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+---
+
+## [3.0.8] - 2025-10-19
+
+### 🔒 Data Protection Enhancement
+
+**One-time manual migration required**
+
+#### Improved Data Security
+
+Moved all user data to protected location outside integration folder to ensure permanent data persistence and backup compatibility.
+
+**New Data Location:**
+```
+/config/solar_forecast_ml/  ✅ Update-safe!
+```
+
+**Protected Files:**
+- `prediction_history.json` - Your learning history
+- `learned_weights.json` - Your ML model parameters
+- `hourly_profile.json` - Your generation profile
+
+#### Benefits
+
+- ✅ Data survives all future HACS updates automatically
+- ✅ Included in Home Assistant backups
+- ✅ Easily accessible via File Editor
+- ✅ 100% local - no cloud, no external services
+
+#### Migration Steps
+
+**Before updating:**
+1. Backup 3 JSON files from `/config/custom_components/solar_forecast_ml/`
+
+**After updating:**
+1. Upload files to `/config/solar_forecast_ml/` (new location)
+2. Restart Home Assistant
+
+See [Release Notes](https://github.com/Zara-Toorox/ha-solar-forecast-ml/releases/tag/v3.0.8) for detailed instructions.
+
+#### Technical Changes
+
+- `const.py` - Updated data storage paths
+- `README.md` - Version badge updated to 3.0.8
+- `manifest.json` - Version 3.0.8
 
 ---
 
 ## [3.0.6] - 2025-10-19
 
-### 🎉 Complete ML Fix Release
+### Enhancements
 
-This release combines all critical bugfixes from v3.0.3 through v3.0.6 into one stable release. After extensive testing, Solar Forecast ML now works exactly as designed with reliable machine learning, data persistence, and accurate forecasting.
+#### Optimized Status Display
 
-**⚠️ All users on v3.0.2 or earlier should update immediately!**
-
----
-
-### 🐛 Critical Bug Fixes
-
-#### Bug #1: Manual Forecast Button Data Loss (v3.0.3)
-
-**Problem:** Pressing the manual forecast button caused complete loss of historical data, breaking machine learning functionality.
-
-**Root Cause:** The button's `async_press()` method called `_create_forecast()` without first loading historical data from disk, causing incomplete data to be saved back.
-
-**Fix:** Added history loading before forecast creation in `button.py`:
-```python
-async def async_press(self):
-    await self.coordinator._load_history()  # Load first!
-    await self.coordinator._create_forecast()
-```
-
-**Impact:** Manual forecast button now preserves all historical data correctly.
-
----
-
-#### Bug #2: Hourly Data Overwrite (v3.0.4)
-
-**Problem:** Newly collected hourly generation data overwrote all previously collected hours instead of merging.
-
-**Root Cause:** Used `copy()` instead of `update()` when saving hourly data in two locations:
-- `_collect_hourly_data()` - immediate save after collection
-- `_create_forecast()` - forecast update
-
-**Fix:** Changed to merge operation in `sensor.py`:
-```python
-# Before (overwrites all hours):
-self.daily_predictions[today]['hourly_data'] = self.today_hourly_data.copy()
-
-# After (merges with existing hours):
-if 'hourly_data' not in self.daily_predictions[today]:
-    self.daily_predictions[today]['hourly_data'] = {}
-self.daily_predictions[today]['hourly_data'].update(self.today_hourly_data)
-```
-
-**Impact:** Complete daily generation profiles are now maintained correctly.
-
----
-
-#### Bug #3: Hourly Data Loss on Restart (v3.0.4)
-
-**Problem:** Hourly data collected between 06:00 and 23:00 was lost on Home Assistant restart because it was only stored in RAM.
-
-**Root Cause:** Hourly data was only written to disk at 06:00 (morning forecast) and 23:00 (learning cycle).
-
-**Fix:** Implemented immediate disk save after each hourly collection in `sensor.py`:
-```python
-# After collecting hour data:
-self.daily_predictions[today]['hourly_data'].update(self.today_hourly_data)
-self._save_history()  # Save immediately to disk!
-```
-
-**Impact:** Hourly data now survives restarts at any time, improving ML accuracy.
-
----
-
-#### Bug #4: Weather Integration Detection Failure (v3.0.5)
-
-**Problem:** Race condition during Home Assistant startup - Solar Forecast ML tried to detect weather integration before it was ready, causing "No forecast method available" errors.
-
-**Root Cause:** Weather integrations load after custom components, causing detection to fail during startup.
-
-**Fix:** Implemented lazy detection with retry mechanism in `sensor.py`:
-- Detection only happens on first actual forecast request (not during startup)
-- 3 retry attempts with progressive delays (0s, 2s, 5s)
-- Robust handling of weather integration startup delays
-
-**Impact:** Integration now reliably detects weather method even after restarts.
-
----
-
-### ✨ Enhancements
-
-#### Optimized Status Display (v3.0.6)
-
-**Problem:** Status sensor displayed too much information, making it hard to read at a glance.
+Simplified status sensor to show only essential information for better readability.
 
 **Before:**
 ```
@@ -107,104 +68,59 @@ Runs normal | Last Forecast: 0.0h ago | Next Learning: 6h | Inverter: Not config
 Forecast: 0.0h ago | Learning in: 6h | 0%
 ```
 
-**Smart Display Logic:**
-- Shows only essential information by default
-- Inverter status only when configured
-- Profile status only when data available
-- Warning emoji (⚠️) when inverter offline or forecast stale (>6h)
+---
 
-**Impact:** Cleaner, more readable status at a glance.
+## [3.0.5] - 2025-10-19
+
+### Bug Fixes
+
+#### Weather Integration Detection Failure
+
+Fixed race condition during startup where weather integration detection failed because it ran before weather integration was ready.
+
+**Fix:** Implemented lazy detection with retry mechanism (3 attempts with delays).
 
 ---
 
-### 📝 Documentation Improvements
+## [3.0.4] - 2025-10-19
 
-- Completely redesigned README with modern structure
-- Added visual learning timeline with ASCII art
-- Expanded configuration guide with sensor impact metrics
-- Added best practices section with automation examples
-- Improved balance between technical details and user-friendly content
-- Enhanced troubleshooting section with common issues
-- Better organization for improved scanability
+### Critical Bug Fixes
 
----
+#### Hourly Data Overwrite & Loss on Restart
 
-### 🔧 Technical Details
+**Bug 2:** Hourly generation data was overwritten instead of merged.
+**Bug 3:** Hourly data collected between 06:00-23:00 was lost on restart.
 
-**Changed Files:**
-- `sensor.py` - Multiple critical fixes for data persistence and weather detection
-- `button.py` - History loading before forecast creation
-- `manifest.json` - Version 3.0.6
-- `README.md` - Complete documentation overhaul
-- `CHANGELOG.md` - Comprehensive changelog
-
-**Performance Impact:**
-- Minimal overhead: ~20 additional disk writes per day (hourly saves)
-- Improved reliability: Data survives restarts at any time
-- Better ML accuracy: Complete daily generation profiles maintained
-- Faster startup: Lazy weather detection eliminates race conditions
+**Fix:** 
+- Changed from `copy()` to `update()` for merging hourly data
+- Implemented immediate disk save after each hourly collection
 
 ---
 
-### 🔄 Migration Notes
+## [3.0.3] - 2025-10-19
 
-**From v3.0.2 or earlier:**
-- No breaking changes
-- No configuration changes needed
-- Historical data will be preserved going forward
-- Data lost before this update cannot be recovered
+### Critical Bug Fix
 
-**Recommended Actions:**
-1. Update via HACS or manually download release
-2. Restart Home Assistant
-3. Verify historical data preservation in logs
-4. Continue normal operation - ML will improve accuracy over 2-4 weeks
+#### Manual Forecast Button Data Loss
 
----
+Fixed button not loading history before creating forecast, which caused complete data loss.
 
-### 🙏 Credits
-
-Special thanks to our amazing community testers who helped identify and verify these critical bugs:
-
-- **Benny-Bug** - Extensive bug tracking and detailed reports
-- **MartyBr** - Continuous testing and providing screenshots
-- **Sebastian** - Code review and valuable suggestions
-- **Wolfi1** - Testing since day one
-- **RobertoCravallo** - Persistent follow-up and thorough testing
-- **Simon42 Forum Community** - Ongoing support and feedback
-
-Your contributions made this release possible! 🎉
-
----
-
-### ✅ Known Issues
-
-None at this time. All reported critical bugs have been resolved.
-
----
-
-### 🌟 What's Working Now
-
-With v3.0.6, Solar Forecast ML finally works exactly as designed:
-- ✅ Machine Learning that actually learns and improves
-- ✅ Historical data preservation across restarts
-- ✅ Increasing accuracy over time (typically 85-95% after 30 days)
-- ✅ Reliable manual forecast button
-- ✅ Complete hourly generation profiles
-- ✅ Robust weather integration detection
-- ✅ Clean, informative status display
-
-**This is the stable foundation for future enhancements!**
+**Fix:** Added `await coordinator._load_history()` before forecast creation in button.py.
 
 ---
 
 ## [3.0.2] - 2025-10-19
 
-### 🐛 Critical Bug Fixes
+### Critical Bug Fixes
 
-Fixed history data loss and night-time logic issues. See v3.0.6 release notes for details.
+#### History Data Loss & Night-Time Logic
 
-**Note:** v3.0.3-v3.0.6 contain additional critical fixes. Update to v3.0.6 for complete stability.
+**Bug 1:** History data was overwritten instead of merged.
+**Bug 2:** Morning hours (00:00-04:59) showed 0 kWh incorrectly.
+
+**Fix:**
+- Changed to `update()` instead of direct assignment
+- Night logic now only sets 0 during evening (21:00-23:59)
 
 ---
 
@@ -236,9 +152,3 @@ Fixed history data loss and night-time logic issues. See v3.0.6 release notes fo
 - Better error handling
 - HACS compatible
 - Professional documentation
-
----
-
-## [2.x.x] - Legacy Versions
-
-See previous releases for older changelog entries.

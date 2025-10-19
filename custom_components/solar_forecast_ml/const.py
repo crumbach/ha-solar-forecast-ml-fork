@@ -42,12 +42,17 @@ DEFAULT_NOTIFY_LEARNING = False
 DEFAULT_NOTIFY_INVERTER = False
 DEFAULT_NOTIFY_STARTUP = True  # Nur Start-Nachricht standardmäßig an
 
-# Datei für gelernte Gewichte
-WEIGHTS_FILE = "/config/custom_components/solar_forecast_ml/learned_weights.json"
-HISTORY_FILE = "/config/custom_components/solar_forecast_ml/prediction_history.json"
+# v3.0.8: Data Storage (außerhalb custom_components für Update-Sicherheit)
+DATA_DIR = "/config/solar_forecast_ml"
+WEIGHTS_FILE = f"{DATA_DIR}/learned_weights.json"
+HISTORY_FILE = f"{DATA_DIR}/prediction_history.json"
+HOURLY_PROFILE_FILE = f"{DATA_DIR}/hourly_profile.json"
 
-# v2.3.0: Separate Datei für Tagesprofil-Daten
-HOURLY_PROFILE_FILE = "/config/custom_components/solar_forecast_ml/hourly_profile.json"
+# Alte Pfade für automatische Migration
+OLD_DATA_DIR = "/config/custom_components/solar_forecast_ml"
+OLD_WEIGHTS_FILE = f"{OLD_DATA_DIR}/learned_weights.json"
+OLD_HISTORY_FILE = f"{OLD_DATA_DIR}/prediction_history.json"
+OLD_HOURLY_PROFILE_FILE = f"{OLD_DATA_DIR}/hourly_profile.json"
 
 # Standard-Gewichte (inkl. Forecast.Solar 'fs')
 DEFAULT_WEIGHTS = {
