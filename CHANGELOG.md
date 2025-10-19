@@ -2,154 +2,135 @@
 
 All notable changes to this project will be documented in this file.
 
-## [3.0.1] - 2025-10-19
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-### 🐛 Bugfixes (Critical Hotfix)
-- **CRITICAL:** Fixed `name 'now' is not defined` error in `_create_forecast()`
-- **CRITICAL:** Fixed sensors showing 0.0 kWh after Home Assistant restart  
-- **Fixed:** Race condition in coordinator initialization
-- **Fixed:** Manual forecast button now works correctly
+## [3.0.2] - 2025-10-19
 
-### 🔧 Technical Changes
-- Moved `_load_history()` and `_load_last_data()` to run before first coordinator refresh
-- Added missing `now = datetime.now()` in night-time check
-- Removed duplicate `_initial_setup()` async task call
+### 🐛 Critical Bug Fixes
 
-### 📊 Impact
-- ✅ Sensors now retain values after restart
-- ✅ Manual forecast button works without errors
-- ✅ Improved startup reliability
+#### Bug #1: History Data Loss (CRITICAL for ML!)
+**Problem:** When creating a new forecast (manual button, restart, or scheduled update), the integration was **overwriting** the complete day entry in `prediction_history.json`, causing:
+- Loss of `actual` values (collected at 23:00)
+- Loss of `hourly_data` (collected hourly throughout the day)
+- **Machine Learning unable to learn** (no historical data to train on!)
+
+**Root Cause:** Using direct assignment `self.daily_predictions[today] = {...}` instead of merging.
+
+**Fix:** Changed to `self.daily_predictions[today].update({...})` to preserve existing data:
+- ✅ `actual` values are now preserved
+- ✅ `hourly_data` is now preserved
+- ✅ **ML can now learn and improve accuracy!**
+
+**Impact:** This was preventing the entire ML functionality from working. After this fix, the integration can finally learn from historical data and improve predictions over time.
 
 ---
+
+#### Bug #2: False Zero Forecast at Night (UX Issue)
+**Problem:** Between 00:00-04:59, "Forecast Today" sensor showed **0 kWh** even though a new day had started and forecast existed.
+
+**Root Cause:** Night-time logic was too aggressive, setting forecast to 0 during **two** time periods:
+- 21:00-23:59 ✅ (correct - day is over)
+- 00:00-04:59 ❌ (wrong - new day has started!)
+
+**Fix:** Changed night logic to only set 0 during evening hours (21:00-23:59):
+- ✅ Morning (00:00-04:59): Shows forecast for new day
+- ✅ Evening (21:00-23:59): Shows 0 (day is over)
+
+**Impact:** Better user experience - no more confusing 6 hours of "dead" forecast in the morning.
+
+---
+
+### 📝 Technical Details
+
+**Changed Files:**
+- `sensor.py` - Two critical patches applied
+- `manifest.json` - Version updated to 3.0.2
+
+**Code Changes:**
+
+1. **In `_create_forecast()` method (line ~850):**
+```python
+# Before (overwrites everything):
+self.daily_predictions[today] = {...}
+
+# After (merges with existing data):
+if today not in self.daily_predictions:
+    self.daily_predictions[today] = {}
+self.daily_predictions[today].update({...})
+```
+
+2. **In `_create_forecast()` method (line ~841):**
+```python
+# Before (both time periods):
+if self._is_night_time() and (now.hour < 5 or now.hour >= 21):
+    heute_kwh = 0.0
+
+# After (only evening):
+if self._is_night_time() and now.hour >= 21:
+    heute_kwh = 0.0
+```
+
+3. **In `_predict_day()` method (line ~1038):**
+```python
+# Before:
+if self._is_night_time() and is_today:
+    return 0.0
+
+# After:
+if self._is_night_time() and is_today and datetime.now().hour >= 21:
+    return 0.0
+```
+
+---
+
+### 🔄 Migration Notes
+
+**No breaking changes** - this is a bug fix release.
+
+**Recommended Actions:**
+1. Update to v3.0.2 via HACS
+2. Restart Home Assistant
+3. Check that your historical data is preserved in `prediction_history.json`
+4. Verify that morning forecasts (00:00-04:59) show correct values
+
+---
+
+### 🙏 Credits
+
+Thanks to **@73ymw** for extensive testing and reporting these critical bugs!
+
+---
+
+## [3.0.1] - 2025-10-18
+
+### Fixed
+- Fixed coordinator data loading before first refresh
+- Improved startup sequence to prevent race conditions
 
 ## [3.0.0] - 2025-10-18
 
-### 🎉 Complete Rewrite
-**BREAKING CHANGES:** Not compatible with v2.x - Clean installation required!
-
-### ✨ New Features
-- **Config Flow UI:** Complete setup via GUI (no more YAML!)
-- **Reconfigure Flow:** Change sensors without reinstalling
-- **Options Flow:** Toggle notifications and features
-- **Button Entity:** Manual forecast trigger
-- **Diagnostic Sensor:** Detailed status information
-- **Hourly Forecast Sensor:** Short-term predictions (optional)
-- **Notification System:** Configurable alerts for forecasts, learning, inverter
-
-### 🧠 Machine Learning Improvements
-- **Daily Profile Learning:** Learns typical hourly yield pattern
-- **Quick Calibration:** Intelligent kWp-based initial values
-- **Improved Accuracy Calculation:** MAPE-based model performance
-- **Self-Calibration:** Automatic base capacity adjustment
-
-### 🌤️ Weather Integration
-- **Auto-Detection:** Automatically detects weather integration type
-- **DWD Support:** Optimized for German Weather Service (preferred!)
-- **Multi-Method:** Tries Service API, then Attribute fallback
-- **Better Error Handling:** Clear messages when weather unavailable
-
-### 🔌 Sensor Support
-- **Current Power Sensor:** For daily profile learning (W)
-- **Inverter Monitoring:** Power + Daily sensors for offline detection
-- **Optional Sensors:** Lux, Temp, Wind, UV for ML features
-- **Forecast.Solar:** Blending with external forecasts
-
-### 🏗️ Architecture
-- **DataUpdateCoordinator:** Modern HA design pattern
-- **Async First:** All I/O operations are async
-- **Clean Unload:** Proper entity cleanup on removal
-- **File Storage:** JSON files in custom_components directory
-
-### 📱 User Experience
-- **Multi-Language:** German + English (expandable)
-- **Descriptions:** Every config option explained
-- **Validation:** Input validation with helpful error messages
-- **Status Messages:** Detailed diagnostic information
-
-### 🐛 Fixes
-- **Night-Time Handling:** Intelligent fix prevents 0 kWh at 6 AM
-- **Restart Resilience:** Loads last known values on startup
-- **Hourly Recording:** Proper data collection every hour
-- **Midnight Learning:** Runs at 23:00 instead of midnight
-
-### 🗑️ Removed
-- **YAML Configuration:** Replaced by Config Flow
-- **Manual Sensor Creation:** All sensors auto-created
-- **Old File Paths:** Now in custom_components directory
-
-### ⚠️ Migration Notes
-- Direct upgrade from v2.x NOT possible
-- Must remove old integration completely
-- Clean installation required
-- Previous learned data cannot be migrated
-
----
-
-## [2.3.0] - 2025-10-15
-
 ### Added
-- Button for manual forecast updates
-- Current power sensor for daily profile learning
-- Hourly data collection
-- Notification toggles
-- Weather auto-detection (DWD priority)
-
-### Improved
-- Quick calibration from kWp
-- Better error messages
-- Sensor removal cleanup
-
----
-
-## [2.2.0] - 2025-10-10
-
-### Added
-- Forecast.Solar blending
-- Inverter monitoring
-- Better weather condition handling
-
----
-
-## [2.1.0] - 2025-10-05
-
-### Added
-- UV sensor support
-- Wind sensor support
-- Temperature-based corrections
-
----
-
-## [2.0.0] - 2025-10-01
+- Complete rewrite with improved ML algorithm
+- Quick calibration using plant kWp
+- Smart weather integration detection (DWD prioritized)
+- Hourly profile learning
+- Extended JSON data storage
+- Multi-language support (German/English)
 
 ### Changed
-- Rewrite with better ML model
-- Improved accuracy tracking
-- Daily learning cycle
+- **BREAKING:** Requires complete removal of previous versions before installation
+- New button platform for manual forecast trigger
+- Improved night-time detection using sun.sun entity
+
+### Technical
+- Async I/O operations
+- Better error handling
+- HACS compatible
+- Professional documentation
 
 ---
 
-## [1.1.0] - 2025-09-13
+## [2.x.x] - Legacy Versions
 
-### Added
-- Self-learning solar forecast with ML
-- Today and tomorrow predictions
-- Accuracy tracking sensor
-- Optional sensor support (lux, temp, wind, UV)
-- kWp configuration for better accuracy
-- Energy dashboard integration
-
-### Features
-- Learns from actual production data
-- Adapts to your installation
-- Weather-based predictions
-- 14-day calibration period
-
----
-
-## [1.0.0] - 2025-09-01 (BETA)
-
-### Added
-- Initial release
-- Basic solar forecasting
-- Weather integration
-- Manual configuration
+See previous releases for older changelog entries.

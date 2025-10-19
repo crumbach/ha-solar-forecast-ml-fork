@@ -926,14 +926,18 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
             # 🔧 FIX v3.0.1: Definiere 'now' zuerst!
             now = datetime.now()
             
-            # Intelligenter Nacht-Fix: Nur bei tiefer Nacht (vor 5 Uhr oder nach 21 Uhr)
-            if self._is_night_time() and (now.hour < 5 or now.hour >= 21):
+            # CRITICAL FIX v3.0.2: Nur Abend auf 0, Morgen behält Prognose!
+            if self._is_night_time() and now.hour >= 21:
                 heute_kwh = 0.0
             
             today = date.today().isoformat()
             
             # JSON-Erweiterung
-            self.daily_predictions[today] = {
+            # CRITICAL FIX v3.0.2: Merge statt Overwrite!
+            if today not in self.daily_predictions:
+                self.daily_predictions[today] = {}
+            
+            self.daily_predictions[today].update({
                 'predicted': heute_kwh,
                 'predicted_morgen': morgen_kwh,
                 'features': sensor_data,
@@ -941,7 +945,7 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                 'weather_condition': forecast_data[0].get('condition', 'unknown'),
                 'cloud_coverage': forecast_data[0].get('cloud_coverage'),
                 'temperature': forecast_data[0].get('temperature'),
-            }
+            })
             
             if self.today_hourly_data:
                 self.daily_predictions[today]['hourly_data'] = self.today_hourly_data.copy()
@@ -1051,7 +1055,8 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
         """Erstelle Prognose mit gelernten Gewichten."""
         LUX_MAX_NORM = 100000.0
         
-        if self._is_night_time() and is_today:
+        # CRITICAL FIX v3.0.2.1: Nur Abend (21-23) auf 0, nicht Morgen (00-05)!
+        if self._is_night_time() and is_today and datetime.now().hour >= 21:
             return 0.0
         
         try:
