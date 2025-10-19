@@ -1,4 +1,4 @@
-"""Solar Forecast ML Button Platform - v3.0.0."""
+"""Solar Forecast ML Button Platform - v3.0.2."""
 import logging
 import asyncio
 from homeassistant.components.button import ButtonEntity
@@ -56,6 +56,11 @@ class ManualForecastButton(CoordinatorEntity, ButtonEntity):
         """Handle button press - trigger forecast."""
         _LOGGER.info("🔄 Manuelle Prognose durch Button ausgelöst")
         try:
+            # CRITICAL FIX v3.0.2: Lade History VORHER um alle Tage zu bewahren!
+            _LOGGER.info("📚 Lade History vor manueller Prognose...")
+            await self.coordinator._load_history()
+            
+            # Jetzt Prognose erstellen (mit vollständiger History im RAM)
             await self.coordinator._create_forecast()
             
             # Benachrichtigung über erfolgreiche Prognose
