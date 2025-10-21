@@ -1,3 +1,3 @@
-solar_forecast_ml.trigger_learning:
-  description: Manually trigger the machine learning process for the previous day.
-  fields: {}
+trigger_learning:
+  name: Lernprozess manuell auslösen
+  description: Startet den nächtlichen Lernprozess sofort. Ideal zum Testen oder um das Modell nach Konfigurationsänderungen sofort zu aktualisieren.
