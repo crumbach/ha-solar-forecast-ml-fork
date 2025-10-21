@@ -1,0 +1,3 @@
+solar_forecast_ml.trigger_learning:
+  description: Manually trigger the machine learning process for the previous day.
+  fields: {}
