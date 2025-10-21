@@ -1,3 +1,4 @@
 trigger_learning:
   name: Lernprozess manuell auslösen
   description: Startet den nächtlichen Lernprozess sofort. Ideal zum Testen oder um das Modell nach Konfigurationsänderungen sofort zu aktualisieren.
+

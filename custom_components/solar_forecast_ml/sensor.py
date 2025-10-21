@@ -4,7 +4,7 @@ Sensor-Plattform für die Solar Forecast ML Integration.
 Diese Datei ist verantwortlich für die Erstellung und Verwaltung aller
 Sensor-Entitäten, die ihre Daten vom zentralen Koordinator beziehen.
 """
-from __future__ import annotations
+from __future__ import annotations # KORREKTUR: __future__ statt __future_
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -37,24 +37,21 @@ async def async_setup_entry(
 
     entities_to_add = [
         # Logische Reihenfolge: Diagnostic (Status, Abweichung, Genauigkeit) > Prognosen > Config (Peak, Produktion, Durchschnitt, Autarkie)
-        DiagnosticStatusSensor(coordinator, entry),  # Diagnostic
+        DiagnosticStatusSensor(coordinator, entry),      # Diagnostic
         YesterdayDeviationSensor(coordinator, entry),  # Diagnostic
-        SolarAccuracySensor(coordinator, entry),  # Diagnostic
+        SolarAccuracySensor(coordinator, entry),         # Diagnostic
         SolarForecastSensor(coordinator, entry, "heute"),  # Prognose (Haupt)
-        NextHourSensor(coordinator, entry),  # Prognose (Haupt, falls enabled)
-        SolarForecastSensor(coordinator, entry, "morgen"),  # Prognose (Haupt)
-        PeakProductionHourSensor(coordinator, entry),  # Config
-        ProductionTimeSensor(coordinator, entry),  # Config
-        AverageYieldSensor(coordinator, entry),  # Config
-        AutarkySensor(coordinator, entry),  # Config
+        # NextHourSensor wird unten bedingt hinzugefügt
+        SolarForecastSensor(coordinator, entry, "morgen"), # Prognose (Haupt)
+        PeakProductionHourSensor(coordinator, entry),    # Config
+        ProductionTimeSensor(coordinator, entry),        # Config
+        AverageYieldSensor(coordinator, entry),          # Config
+        AutarkySensor(coordinator, entry),               # Config
     ]
 
-    if coordinator.enable_diagnostic:
-        # Diagnostic-Sensoren sind immer da, wenn enabled
-        pass
+    # Füge den stündlichen Sensor nur hinzu, wenn er in den Optionen aktiviert ist.
     if coordinator.enable_hourly:
-        # Nächste Stunde hinzufügen, wenn enabled
-        pass
+        entities_to_add.append(NextHourSensor(coordinator, entry))
         
     async_add_entities(entities_to_add)
 
@@ -72,7 +69,7 @@ class BaseSolarSensor(CoordinatorEntity[SolarForecastCoordinator], SensorEntity)
             identifiers={(DOMAIN, entry.entry_id)},
             name="Solar Forecast ML",
             manufacturer="Zara-Toorox",
-            model="v4.3 Cosmetic Update",
+            model="v4.4.0 Stability Update", # Modellbezeichnung
         )
 
 
