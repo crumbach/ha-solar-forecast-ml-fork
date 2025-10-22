@@ -1,7 +1,7 @@
 # 🌞 Solar Forecast ML for Home Assistant
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-[![Version](https://img.shields.io/badge/version-v4.4.0-blue.svg)](https://github.com/Zara-Toorox/ha-solar-forecast-ml/releases)
+[![Version](https://img.shields.io/badge/version-v4.4.3-blue.svg)](https://github.com/Zara-Toorox/ha-solar-forecast-ml/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 **Empower Your Solar System with Adaptive, Self-Learning Forecasts – Tailored to Your Unique Setup for Smarter Energy Management.**

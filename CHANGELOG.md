@@ -4,6 +4,39 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [4.4.3] - 2025-10-22
+
+### 🔧 Bug Fixes & Stability Improvements
+
+#### Weather & API Integration
+- **Fixed Weather Query Issues**: Resolved intermittent failures in weather data retrieval (`_get_weather_forecast`), including handling of malformed responses and connection timeouts. This ensures consistent fetching of daily and hourly forecasts from providers like DWD, preventing "unavailable" states in sensors.
+- **Patched DWD to New Version**: Updated the DWD (Deutscher Wetterdienst) API integration in `coordinator.py` to comply with the latest API schema changes (v2.3+), fixing parsing errors for cloud coverage and UV index data that caused inaccurate predictions.
+
+#### Core Stability & Compatibility
+- **Improved Overall Stability**: Added additional safeguards in `coordinator.py` for async operations, including enhanced locking around learning cycles and data saves to mitigate rare concurrency issues during high-frequency updates (e.g., rapid sensor polling).
+- **Added Home Assistant Patch**: Incorporated compatibility fixes for Home Assistant 2025.12.1+, addressing deprecation warnings related to entity registry updates and async executor jobs. This includes updated `async_setup_entry` logic to prevent migration errors during HA core upgrades.
+- **Reworked Button Functionality**: Overhauled the manual forecast button in `button.py` to include better error feedback (e.g., toast notifications for failures) and idempotency checks, ensuring repeated presses don't trigger duplicate computations or log spam.
+
+#### Logic Enhancements
+- **Improved Core Logic**: Refined the prediction pipeline in `coordinator.py` with better handling of edge cases in weight application (e.g., zero-division in adaptive tuning) and hourly profile merging, resulting in more precise forecasts under variable conditions like partial cloud cover.
+
+### ✨ Enhancements
+
+#### User Experience
+- **Enhanced Diagnostics**: Updated the `DiagnosticStatusSensor` to include a new attribute (`api_status`) reporting the health of weather providers (e.g., "DWD: OK" or "Retry Pending"), aiding in troubleshooting API-related issues.
+
+**No breaking changes** – Backward compatible with v4.4.2. Recommended: Trigger a manual forecast after upgrade to verify weather data flow.
+
+### 🙏 Contributors
+Special thanks to the following community members for their contributions, testing, and feedback in this release:
+- Carsten76
+- Chris33
+- MartyBr
+- Matt1
+- Op3ra7or262
+
+---
+
 ## [4.4.2] - 2025-10-22
 
 ### 🔧 Bug Fixes & Stability Improvements
@@ -41,7 +74,6 @@ All notable changes to this project will be documented in this file.
 
 **No breaking changes** – Backward compatible with v4.4.0 (but manual check of `learned_weights.json` for the `lux` value is recommended).
 
----
 
 ---
 
@@ -129,7 +161,7 @@ The entire integration has been broken down from a monolithic `sensor.py` into s
 - **Extended Diagnostic Sensor:** Now shows detailed attributes (e.g., last_update, weights_summary, forecast_method).
 - **Robust Error Handling:** Try-Except in all critical paths (e.g., sensor reads, forecast calls) with logging.
 - **Performance Optimizations:** Lazy detection with retries, merge logic for history/hourly data (no overwrites).
-- **Version Consistency:** All files tagged with v4.0 (e.g., model in sensors: "v4.0 Refactored").
+- **Version Consistency:** All files tagged with v4.4.3 (e.g., model in sensors: "v4.0 Refactored").
 
 #### Benefits
 

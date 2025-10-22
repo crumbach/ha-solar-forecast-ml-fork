@@ -64,7 +64,7 @@ class BaseSolarSensor(CoordinatorEntity[SolarForecastCoordinator], SensorEntity)
             identifiers={(DOMAIN, entry.entry_id)},
             name="Solar Forecast ML",
             manufacturer="Zara-Toorox",
-            model="v4.2.2",
+            model="v4.4.3",
         )
 
 
