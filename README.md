@@ -144,6 +144,6 @@ The integration creates the following sensors and buttons.
 -   Contributions are welcome! Please fork, create a feature branch, and submit a PR.
 
 ## License
-MIT – see [LICENSE](LICENSE).
+AGPLv3.
 
 ---
