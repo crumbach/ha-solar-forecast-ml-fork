@@ -9,6 +9,9 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
+# KORREKTUR: OptionsFlow statt OptionsFlowWithReload verwenden, wenn __init__ wegfällt
+# ODER OptionsFlowWithReload behalten, __init__ weglassen funktioniert auch.
+# Wir behalten OptionsFlowWithReload für die automatische Reload-Funktion.
 from homeassistant.config_entries import OptionsFlowWithReload, SOURCE_RECONFIGURE
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
@@ -48,7 +51,8 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow):
     @callback
     def async_get_options_flow(config_entry: config_entries.ConfigEntry):
         """Leitet den Benutzer zum Options-Flow."""
-        return SolarForecastMLOptionsFlow(config_entry)
+        # KORREKTUR (nach Vorschlag Freund): Kein Argument mehr übergeben!
+        return SolarForecastMLOptionsFlow()
 
     def _get_schema(self, defaults: dict[str, Any] | None) -> vol.Schema:
         """
@@ -76,17 +80,17 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow):
                 CONF_POWER_ENTITY,
                 default=defaults.get(CONF_POWER_ENTITY, "")
             ): selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor"])),
-            
+
             vol.Optional(
                 CONF_TOTAL_CONSUMPTION_TODAY,
                 default=_get_entity_default(CONF_TOTAL_CONSUMPTION_TODAY)
             ): selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor"])),
-            
+
             vol.Optional(
                 CONF_PLANT_KWP,
                 default=_get_string_default(CONF_PLANT_KWP)
             ): str,
-            
+
             vol.Optional(
                 CONF_RAIN_SENSOR,
                 default=_get_entity_default(CONF_RAIN_SENSOR)
@@ -121,7 +125,7 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow):
         """Behandelt die Ersteinrichtung."""
         errors = {}
         prefill_data = user_input if user_input is not None else {}
-        
+
         if user_input is not None:
             if not user_input.get(CONF_WEATHER_ENTITY):
                 errors[CONF_WEATHER_ENTITY] = "required"
@@ -134,7 +138,6 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow):
                     errors=errors,
                 )
 
-            # UNIQUE-ID-FIX: Basier Unique-ID auf stabiler Weather-Entity (nicht changeable Power)
             unique_id = user_input[CONF_WEATHER_ENTITY].strip()
             await self.async_set_unique_id(unique_id)
             self._abort_if_unique_id_configured()
@@ -145,7 +148,7 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow):
                     cleaned_data[key] = ""
 
             return self.async_create_entry(title="Solar Forecast ML", data=cleaned_data)
-        
+
         return self.async_show_form(
             step_id="user",
             data_schema=self._get_schema({}),
@@ -153,7 +156,7 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow):
         )
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """Behandelt die Rekonfiguration. UNIQUE-ID-FIX: Stabiler Check + Update bei Change."""
+        """Behandelt die Rekonfiguration."""
         if self.source != SOURCE_RECONFIGURE:
             return self.async_abort(reason="not_reconfigure")
 
@@ -162,18 +165,16 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow):
             return self.async_abort(reason="entry_not_found")
 
         errors = {}
-        prefill_data = dict(entry.data)  # Kopie für Prefill
-        
+        prefill_data = dict(entry.data)
+
         if user_input is not None:
-            # Merge für Fehler-Prefill
             prefill_data.update(user_input)
-            
-            # Validierung (erweitert: Prüfe auf leere required nach Trim)
+
             if not user_input.get(CONF_WEATHER_ENTITY, "").strip():
                 errors[CONF_WEATHER_ENTITY] = "required"
             if not user_input.get(CONF_POWER_ENTITY, "").strip():
                 errors[CONF_POWER_ENTITY] = "required"
-            
+
             if errors:
                 return self.async_show_form(
                     step_id="reconfigure",
@@ -181,34 +182,27 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow):
                     errors=errors,
                 )
 
-            # UNIQUE-ID-FIX: Basier auf Weather (stabil), trimme, und handle Changes
             new_unique_id = user_input.get(CONF_WEATHER_ENTITY, "").strip()
             old_unique_id = entry.unique_id or ""
-            
+
             if new_unique_id != old_unique_id:
-                # Bei Change: Setze neue ID und update Entry explizit (erlaubt in Reconfigure)
                 await self.async_set_unique_id(new_unique_id)
-                # Kein Mismatch-Check: Stattdessen direkt updaten
                 self.hass.config_entries.async_update_entry(entry, unique_id=new_unique_id)
             else:
-                # Bei no-change: Standard-Check für Konsistenz
                 await self.async_set_unique_id(new_unique_id)
-                self._abort_if_unique_id_mismatch()
+                pass
 
-            # Merge für vollständige Data (preserve alte Keys) + Clean
-            cleaned_data = {**entry.data, **user_input}  # Merge: Alte + Neue
+            cleaned_data = {**entry.data, **user_input}
             for key, value in cleaned_data.items():
-                if value is None or value == "":
-                    cleaned_data[key] = ""  # Safe default für Entities/Strings
-            
-            # Korrekter Helper: data_updates (merge), + no-reload bei no change
+                if value is None:
+                    cleaned_data[key] = ""
+
             return self.async_update_reload_and_abort(
                 entry,
-                data_updates=cleaned_data,
-                reload_even_if_entry_is_unchanged=False,  # Effizient bei no change
+                data=cleaned_data,
+                reload_even_if_entry_is_unchanged=False,
             )
 
-        # Initial: Prefill mit Entry-Data
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=self._get_schema(prefill_data),
@@ -218,8 +212,9 @@ class SolarForecastMLConfigFlow(config_entries.ConfigFlow):
 
 class SolarForecastMLOptionsFlow(OptionsFlowWithReload):
     """Behandelt den Options-Flow mit automatischer Reload nach Änderungen."""
-    def __init__(self, config_entry: config_entries.ConfigEntry):
-        self.config_entry = config_entry
+
+    # KORREKTUR (nach Vorschlag Freund): KEINE __init__-Methode mehr!
+    # self.config_entry wird automatisch von der Basisklasse gesetzt.
 
     OPTIONS_SCHEMA = vol.Schema({
         vol.Optional(
@@ -261,7 +256,8 @@ class SolarForecastMLOptionsFlow(OptionsFlowWithReload):
         return self.async_show_form(
             step_id="init",
             data_schema=self.add_suggested_values_to_schema(
-                self.OPTIONS_SCHEMA, self.config_entry.options
+                self.OPTIONS_SCHEMA,
+                self.config_entry.options # KORREKTUR (nach Vorschlag Freund): Zugriff über self.config_entry.options
             ),
             errors=errors,
         )

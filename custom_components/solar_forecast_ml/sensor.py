@@ -4,7 +4,7 @@ Sensor-Plattform für die Solar Forecast ML Integration.
 Diese Datei ist verantwortlich für die Erstellung und Verwaltung aller
 Sensor-Entitäten, die ihre Daten vom zentralen Koordinator beziehen.
 """
-from __future__ import annotations # KORREKTUR: __future__ statt __future_
+from __future__ import annotations
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -30,26 +30,21 @@ async def async_setup_entry(
 ) -> None:
     """
     Richtet die Sensoren für die Solar Forecast ML Plattform ein.
-    Die Reihenfolge in der UI wird durch entity_category-Gruppen gesteuert (Diagnostic > Config).
-    Prognosen bleiben in der Hauptgruppe für logische Platzierung.
     """
     coordinator: SolarForecastCoordinator = hass.data[DOMAIN][entry.entry_id]
 
     entities_to_add = [
-        # Logische Reihenfolge: Diagnostic (Status, Abweichung, Genauigkeit) > Prognosen > Config (Peak, Produktion, Durchschnitt, Autarkie)
-        DiagnosticStatusSensor(coordinator, entry),      # Diagnostic
-        YesterdayDeviationSensor(coordinator, entry),  # Diagnostic
-        SolarAccuracySensor(coordinator, entry),         # Diagnostic
-        SolarForecastSensor(coordinator, entry, "heute"),  # Prognose (Haupt)
-        # NextHourSensor wird unten bedingt hinzugefügt
-        SolarForecastSensor(coordinator, entry, "morgen"), # Prognose (Haupt)
-        PeakProductionHourSensor(coordinator, entry),    # Config
-        ProductionTimeSensor(coordinator, entry),        # Config
-        AverageYieldSensor(coordinator, entry),          # Config
-        AutarkySensor(coordinator, entry),               # Config
+        DiagnosticStatusSensor(coordinator, entry),
+        YesterdayDeviationSensor(coordinator, entry),
+        SolarAccuracySensor(coordinator, entry),
+        SolarForecastSensor(coordinator, entry, "heute"),
+        SolarForecastSensor(coordinator, entry, "morgen"),
+        PeakProductionHourSensor(coordinator, entry),
+        ProductionTimeSensor(coordinator, entry),
+        AverageYieldSensor(coordinator, entry),
+        AutarkySensor(coordinator, entry),
     ]
 
-    # Füge den stündlichen Sensor nur hinzu, wenn er in den Optionen aktiviert ist.
     if coordinator.enable_hourly:
         entities_to_add.append(NextHourSensor(coordinator, entry))
         
@@ -69,7 +64,7 @@ class BaseSolarSensor(CoordinatorEntity[SolarForecastCoordinator], SensorEntity)
             identifiers={(DOMAIN, entry.entry_id)},
             name="Solar Forecast ML",
             manufacturer="Zara-Toorox",
-            model="v4.4.0 Stability Update", # Modellbezeichnung
+            model="v4.2.2",
         )
 
 
@@ -80,7 +75,6 @@ class SolarForecastSensor(BaseSolarSensor):
         super().__init__(coordinator, entry)
         self._key = key
         self._attr_unique_id = f"{entry.entry_id}_{key}"
-        # Clean Name ohne Duplikate
         clean_name = "Solar Prognose Heute" if key == "heute" else "Solar Prognose Morgen"
         self._attr_name = clean_name
         self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
@@ -99,7 +93,6 @@ class NextHourSensor(BaseSolarSensor):
     def __init__(self, coordinator: SolarForecastCoordinator, entry: ConfigEntry):
         super().__init__(coordinator, entry)
         self._attr_unique_id = f"{entry.entry_id}_naechste_stunde"
-        # Clean Name ohne Duplikate
         self._attr_name = "Prognose Nächste Stunde"
         self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -118,7 +111,6 @@ class PeakProductionHourSensor(BaseSolarSensor):
     def __init__(self, coordinator: SolarForecastCoordinator, entry: ConfigEntry):
         super().__init__(coordinator, entry)
         self._attr_unique_id = f"{entry.entry_id}_peak_production_hour"
-        # Clean Name ohne Duplikate
         self._attr_name = "Beste Stunde für Verbraucher"
         self._attr_icon = "mdi:battery-charging-high"
 
@@ -135,7 +127,6 @@ class ProductionTimeSensor(BaseSolarSensor):
     def __init__(self, coordinator: SolarForecastCoordinator, entry: ConfigEntry):
         super().__init__(coordinator, entry)
         self._attr_unique_id = f"{entry.entry_id}_production_time"
-        # Clean Name ohne Duplikate
         self._attr_name = "Produktionszeit Heute"
         self._attr_icon = "mdi:timer-sand"
 
@@ -152,7 +143,6 @@ class YesterdayDeviationSensor(BaseSolarSensor):
     def __init__(self, coordinator: SolarForecastCoordinator, entry: ConfigEntry):
         super().__init__(coordinator, entry)
         self._attr_unique_id = f"{entry.entry_id}_yesterday_deviation"
-        # Clean Name ohne Duplikate
         self._attr_name = "Prognose Abweichung Gestern"
         self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -172,7 +162,6 @@ class SolarAccuracySensor(BaseSolarSensor):
     def __init__(self, coordinator: SolarForecastCoordinator, entry: ConfigEntry):
         super().__init__(coordinator, entry)
         self._attr_unique_id = f"{entry.entry_id}_genauigkeit"
-        # Clean Name ohne Duplikate
         self._attr_name = "Prognose Genauigkeit"
         self._attr_native_unit_of_measurement = PERCENTAGE
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -191,11 +180,9 @@ class AverageYieldSensor(BaseSolarSensor):
     def __init__(self, coordinator: SolarForecastCoordinator, entry: ConfigEntry):
         super().__init__(coordinator, entry)
         self._attr_unique_id = f"{entry.entry_id}_average_yield"
-        # Clean Name ohne Duplikate
         self._attr_name = "Durchschnittsertrag (30 Tage)"
         self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_icon = "mdi:chart-line"
 
     @property
@@ -211,7 +198,6 @@ class AutarkySensor(BaseSolarSensor):
     def __init__(self, coordinator: SolarForecastCoordinator, entry: ConfigEntry):
         super().__init__(coordinator, entry)
         self._attr_unique_id = f"{entry.entry_id}_autarky_today"
-        # Clean Name ohne Duplikate
         self._attr_name = "Autarkiegrad Heute"
         self._attr_native_unit_of_measurement = PERCENTAGE
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -230,7 +216,6 @@ class DiagnosticStatusSensor(BaseSolarSensor):
     def __init__(self, coordinator: SolarForecastCoordinator, entry: ConfigEntry):
         super().__init__(coordinator, entry)
         self._attr_unique_id = f"{entry.entry_id}_status"
-        # Clean Name ohne Duplikate
         self._attr_name = "Status"
         self._attr_icon = "mdi:information-outline"
 
@@ -244,7 +229,8 @@ class DiagnosticStatusSensor(BaseSolarSensor):
         last_learned_ts = self.coordinator.last_successful_learning
         return {
             "last_successful_learning": dt_util.as_local(last_learned_ts).isoformat() if last_learned_ts else "Noch nicht",
-            "last_update": dt_util.as_local(self.coordinator.last_update).isoformat(),
+            # KORREKTUR: Check hinzugefügt, um Absturz bei None zu verhindern
+            "last_update": dt_util.as_local(self.coordinator.last_update).isoformat() if self.coordinator.last_update else "Noch nicht",
             "base_capacity": f"{self.coordinator.base_capacity:.2f} kWh",
             "weights": self.coordinator.weights,
         }

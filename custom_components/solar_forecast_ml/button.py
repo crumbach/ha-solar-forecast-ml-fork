@@ -49,7 +49,7 @@ class ManualForecastButton(ButtonEntity):
             identifiers={(DOMAIN, entry.entry_id)},
             name="Solar Forecast ML",
             manufacturer="Zara-Toorox",
-            model="v4.4.0",
+            model="v4.4.2",
         )
 
     async def async_press(self) -> None:

@@ -4,6 +4,47 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [4.4.2] - 2025-10-22
+
+### 🔧 Bug Fixes & Stability Improvements
+
+#### Configuration Flow (`config_flow.py`)
+- **Fixed Reconfigure & Options Crashes**: Resolved multiple critical errors (`Entity None is not a valid entity ID`, `Unknown error occurred`, `500 Internal Server Error`) that prevented users from accessing the "Reconfigure" and "Options" (⚙️) dialogues. The flow is now fully functional and robust.
+- **Resolved Deprecation Warning**: Addressed the `Detected that custom integration '...' sets option flow config_entry explicitly...` warning by updating the `OptionsFlow` initialization to comply with Home Assistant 2025.12+ standards.
+- **Improved Unique ID Handling**: Changed the integration's `unique_id` to be based on the more stable `weather_entity` instead of the potentially changeable `power_entity`. Reconfiguration logic now correctly handles potential `unique_id` changes.
+- **Schema Validation Fixes**: Ensured correct data types (`str` vs `float` for `plant_kwp`, handling `None` for optional entities) are used when pre-filling forms, preventing validation errors.
+
+#### Core Logic & Learning (`coordinator.py`)
+- **CRITICAL Race Condition Fix**: Implemented an `asyncio.Lock` to protect data integrity, preventing potential corruption or loss of learned data (`learned_weights.json`, `prediction_history.json`) due to concurrent operations (e.g., updates, learning, manual triggers).
+- **Fixed `plant_kwp` Handling**: Correctly converts the `plant_kwp` configuration value (allowing comma or period as decimal separator) from string to float, enabling the initial `base_capacity` calculation.
+- **Enhanced Weather API Robustness**: Implemented a retry mechanism (with exponential backoff and timeouts) for fetching daily and hourly weather forecasts (`_get_weather_forecast_with_retry`, `_get_hourly_weather_forecasts_with_retry`), significantly improving reliability with potentially slow or unstable weather providers.
+- **Improved Sensor State Handling**: Added robust `try-except ValueError` blocks around all `float(state.state)` conversions when reading sensor values, preventing crashes during learning or data collection if a sensor temporarily reports non-numeric states (e.g., "unavailable").
+- **Fixed Hourly Profile Zero-Division Error**: Prevented potential `NaN` values and crashes in hourly profile calculations (`_calculate_hourly_profile`) by adding a check for `total_ratio <= 0` and falling back to a uniform default profile if no valid historical data exists.
+- **Async I/O Operations**: Converted all file saving and loading operations (`_save_history`, `_load_history`, `_save_weights`, etc.) to use `async` functions with `await self.hass.async_add_executor_job`, ensuring data is fully written before proceeding, per Home Assistant best practices.
+
+#### Accuracy & Sensor Fixes
+- **Fixed Utopian Forecast Values**: Drastically reduced the default weight for the `lux_sensor` in `const.py` (`'lux': 0.0002`) to prevent absurdly high forecast values (e.g., >1000 kWh) caused by high Lux readings. **Note:** Users updating might need to *manually correct* the `"lux"` value in their `/config/solar_forecast_ml/learned_weights.json` if it still contains the old high value (e.g., `0.1`).
+- **Fixed Sensor State Class Warning**: Removed the incorrect `device_class: ENERGY` from `AverageYieldSensor` in `sensor.py`, resolving the `is using state class 'measurement' which is impossible considering device class ('energy')...` warning in logs.
+- **Fixed Potential Timestamp Error**: Added a check in `DiagnosticStatusSensor` (`sensor.py`) to prevent errors if `last_update` timestamp is `None` when generating `extra_state_attributes`.
+- **Made `NextHourSensor` Conditional**: The "Prognose Nächste Stunde" sensor is now correctly added only if the `enable_hourly` option is active (`sensor.py`).
+- **Fixed `__future_` Import Typo**: Corrected a typo in `sensor.py` (`from __future__ import annotations`).
+
+### ✨ Enhancements
+
+#### Hourly Features Now Fully Functional
+- **Hourly Forecast Implemented**: The `_predict_next_hour` logic in `coordinator.py` is now fully implemented, providing intelligent hourly forecasts based on the daily prediction, the learned hourly profile, and the hourly weather forecast.
+- **Hourly Profile Learning Implemented**: The `_calculate_hourly_profile` logic in `coordinator.py` now correctly learns the typical production curve of the user's plant from historical `hourly_data` (requires `current_power_sensor` to be configured) and saves it to `hourly_profile.json`.
+- **"Best Hour" Sensor Functional**: The "Beste Stunde für Verbraucher" sensor (`PeakProductionHourSensor`) now correctly displays the hour with the highest average production based on the learned `hourly_profile.json`.
+
+#### Data Management
+- **Automatic History Pruning**: The integration now automatically removes entries older than 365 days from `prediction_history.json` during the nightly save process (`_async_save_history`) to prevent the file from growing indefinitely.
+
+**No breaking changes** – Backward compatible with v4.4.0 (but manual check of `learned_weights.json` for the `lux` value is recommended).
+
+---
+
+---
+
 ## [4.4.0] - 2025-10-21
 
 ### 🔧 Bug Fixes & Stability Improvements
