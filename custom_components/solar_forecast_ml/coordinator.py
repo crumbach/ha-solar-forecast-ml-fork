@@ -188,9 +188,8 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                     except (ValueError, TypeError): pass 
                     # --- KORREKTUR (ENDE) ---
                 
-                yesterday_iso = (date.today() - timedelta(days=1)).isoformat()
-                if yesterday_iso in self.daily_predictions:
-                    d = self.daily_predictions[yesterday_iso]
+                if today_iso in self.daily_predictions:
+                    d = self.daily_predictions[today_iso]
                     pred, actual = d.get('predicted', 0), d.get('actual', 0)
                     if actual > 0 and pred > 0:
                         error = actual - pred
@@ -200,8 +199,8 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                         await self._async_save_weights() 
                         self._calculate_accuracy()
                         self._calculate_average_yield()
-                        if self.notify_learning: await self._notify_learning_result(yesterday_iso, pred, actual)
-                        if self.notify_successful_learning: await self._notify_successful_learning(yesterday_iso, error)
+                        if self.notify_learning: await self._notify_learning_result(today_iso, pred, actual)
+                        if self.notify_successful_learning: await self._notify_successful_learning(today_iso, error)
                         self.last_successful_learning = dt_util.now()
                         _LOGGER.info("✅ Lernprozess erfolgreich abgeschlossen.")
                         
@@ -210,7 +209,7 @@ class SolarForecastCoordinator(DataUpdateCoordinator):
                         self._calculate_peak_production_hour() 
                         
                     else:
-                        _LOGGER.warning(f"⏩ Überspringe Lernen für {yesterday_iso}: Actual={actual:.2f}, Predicted={pred:.2f}.")
+                        _LOGGER.warning(f"⏩ Überspringe Lernen für {today_iso}: Actual={actual:.2f}, Predicted={pred:.2f}.")
                 
                 await self._async_save_weights() 
                 await self._async_save_history() 
